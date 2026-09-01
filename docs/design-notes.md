@@ -1127,3 +1127,26 @@ en vez de devolver el colector a medición.
 
 **Regla:** una función que existe pero no tiene camino en la interfaz no existe. Y un estado que
 el usuario no puede cambiar tiene que explicarse solo.
+
+#### "Las herramientas del mercado son instantáneas"
+
+La comparación era justa y descubrió dos cosas.
+
+**El disco libre nunca iba a llegar.** El latido enviaba `diskFreeGb: 0` escrito a mano. No era
+una espera: era un dato que el colector no medía. Ahora lo mide del disco donde vive la bóveda
+—`GetDiskFreeSpaceEx` en Windows, `statfs` fuera—, que es lo que decide cuántos días de registros
+caben. Un colector con el disco lleno deja de guardar y nadie se entera hasta que hace falta la
+evidencia.
+
+**La actividad tardaba hasta 65 minutos.** El diseño (§6.6) manda las horas **cerradas**, lo cual
+es correcto para el informe y desastroso para el primer día: el cliente instala, mira Actividad y
+no hay nada. Ahora el colector sube también **la hora en curso** en cada envío, cada cinco minutos.
+
+Lo que hace seguro ese adelanto ya estaba en el esquema: la clave del upsert es
+(firewall, hora, tipo, acción), así que la hora parcial se sobrescribe con la completa cuando
+cierra. Enviar dos veces la misma hora no duplica nada — la decisión de idempotencia tomada al
+diseñar la tabla es la que permite este cambio sin tocarla.
+
+**Regla:** "es por diseño" no es respuesta cuando el diseño se pensó para el informe mensual y el
+usuario está mirando la pantalla el primer día. Lo que cuesta es lo mismo; lo que cambia es
+cuándo se ve.

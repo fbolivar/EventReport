@@ -273,6 +273,31 @@ func (p *Pipeline) CloseHours(now time.Time) (int, error) {
 	return len(closed), nil
 }
 
+// SendOpenHours encola la hora en curso sin cerrarla.
+//
+// La actividad se ve así a los pocos minutos de instalar, en vez de esperar a
+// que termine la hora. Cuando la hora cierre se enviará completa y sobrescribirá
+// a esta: la clave del upsert lo garantiza.
+func (p *Pipeline) SendOpenHours() (int, error) {
+	open := p.Aggregator.Open()
+
+	for _, hour := range open {
+		payload := RollupsPayload{
+			FirewallID: hour.DeviceID,
+			Hours: []RollupHour{{
+				Hour:     hour.Hour.UTC().Format(time.RFC3339),
+				Counters: hour.Counters,
+				TopN:     hour.TopN,
+			}},
+		}
+		if err := p.Buffer.Enqueue("rollups", payload); err != nil {
+			return 0, err
+		}
+	}
+
+	return len(open), nil
+}
+
 // RollupsPayload is the wire shape of `POST /ingest/rollups`.
 type RollupsPayload struct {
 	FirewallID string       `json:"firewallId"`

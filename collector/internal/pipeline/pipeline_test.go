@@ -180,3 +180,31 @@ func TestCriticalEventSeverityIsOurs(t *testing.T) {
 		t.Fatal("el tráfico normal no es un evento crítico")
 	}
 }
+
+func TestOpenHoursAreSentWithoutClosingThem(t *testing.T) {
+	// La actividad tiene que verse sin esperar a que termine la hora. Enviar la
+	// hora en curso es seguro porque la nube la sobrescribe cuando llegue
+	// completa; lo que no puede pasar es que enviarla la borre del agregador.
+	aggregator := aggregate.New()
+	aggregator.Add(&normalize.Event{
+		Timestamp: time.Now().UTC(),
+		Type:      normalize.EventTraffic,
+		Action:    normalize.ActionAllow,
+		DeviceID:  "fw-1",
+	}, time.Now().UTC())
+
+	if len(aggregator.Open()) != 1 {
+		t.Fatal("la hora en curso debería estar abierta")
+	}
+
+	// Leerla no la cierra: sigue ahí para seguir sumando.
+	if len(aggregator.Open()) != 1 {
+		t.Fatal("leer la hora en curso no puede vaciarla")
+	}
+
+	// Y al cerrarla, sale con todo lo acumulado.
+	closed := aggregator.CloseBefore(time.Now().UTC().Add(2 * time.Hour))
+	if len(closed) != 1 {
+		t.Fatalf("horas cerradas = %d", len(closed))
+	}
+}

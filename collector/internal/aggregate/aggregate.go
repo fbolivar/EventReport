@@ -193,6 +193,32 @@ func (a *Aggregator) AddUnparsed(deviceID string, when time.Time) {
 // Called at minute 05 for the previous hour (section 6.6). Late events land in
 // an hour that was already closed and produce a corrective rollup; the cloud
 // upserts by (firewall, hour, type, action), so the correction overwrites.
+// Open devuelve una copia de las horas todavía abiertas, **sin cerrarlas**.
+//
+// Sirve para que la actividad se vea sin esperar a que termine la hora. La
+// escritura en la nube es idempotente por (firewall, hora, tipo, acción), así
+// que enviar la hora a medias y volver a enviarla completa después sobrescribe
+// en vez de duplicar: eso es lo que hace seguro este adelanto.
+func (a *Aggregator) Open() []Hour {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	var open []Hour
+	for deviceID, hours := range a.buckets {
+		for hour, current := range hours {
+			open = append(open, Hour{
+				DeviceID:         deviceID,
+				Hour:             hour,
+				Counters:         sortedCounters(current),
+				TopN:             cappedTop(current),
+				Unparsed:         current.unparsed,
+				ClockSkewSeconds: int(current.maxSkew.Seconds()),
+			})
+		}
+	}
+	return open
+}
+
 func (a *Aggregator) CloseBefore(cutoff time.Time) []Hour {
 	cutoff = cutoff.UTC().Truncate(time.Hour)
 

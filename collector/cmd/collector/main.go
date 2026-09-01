@@ -848,7 +848,12 @@ func collect(ctx context.Context, path, passphrase string, logger *slog.Logger) 
 			}
 
 		case <-upload.C:
-			sendPending(ctx, client, pending, worker, listener, logger)
+			// La hora en curso también se sube: el cliente ve su actividad a
+			// los minutos de instalar, no cuando termine la hora.
+			if _, err := worker.SendOpenHours(); err != nil {
+				logger.Error("no se pudo adelantar la hora en curso", "error", err)
+			}
+			sendPending(ctx, client, pending, worker, listener, file.VaultDir, logger)
 			if _, err := store.Rotate(time.Now()); err != nil {
 				logger.Error("no se pudo rotar la bóveda", "error", err)
 			}
@@ -866,6 +871,7 @@ func sendPending(
 	pending *buffer.Buffer,
 	worker *pipeline.Pipeline,
 	listener *syslog.Listener,
+	vaultDir string,
 	logger *slog.Logger,
 ) {
 	stats := listener.Stats()
@@ -878,7 +884,7 @@ func sendPending(
 		"eps":              stats.Received / 300,
 		"droppedPct":       listener.DroppedPercent(),
 		"queueDepth":       stats.Queued,
-		"diskFreeGb":       0,
+		"diskFreeGb":       vault.FreeGB(vaultDir),
 		"clockSkewSeconds": skew,
 		"unparsed":         unparsed,
 		// Las direcciones de esta máquina: es lo que el portal necesita para
