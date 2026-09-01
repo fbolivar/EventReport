@@ -281,6 +281,27 @@ ilustración.
 - Precios, disponibilidad de marcas, conteos de controles y correo de contacto quedaron marcados
   con `// REVISAR` en `content/marketing.ts`.
 
+### Bloque 4 — portal con fixtures (2026-08-31)
+
+- **El estado de las vistas vive en la URL, no en el cliente.** Filtros de hallazgos, marco de
+  cumplimiento, rango de actividad, marca del asistente y el detalle abierto son parámetros de
+  búsqueda; todas las páginas son componentes de servidor. Ventajas: cada vista es compartible y
+  recargable, y cuando entren las consultas a Supabase no hay que reescribir la capa de estado.
+  El único componente de cliente del portal es la barra lateral, y solo para saber qué sección
+  está abierta (`useSelectedLayoutSegment`).
+- **El estado de cumplimiento se deriva, no se escribe.** `assessmentsFor()` aplica la tabla del
+  §15.2 sobre las reglas mapeadas y las `Capabilities` de cada marca; resolver un hallazgo cambia
+  el control solo. Esa misma función alimentará `compliance_assessments` en Supabase, así que el
+  motor se prueba antes de existir la base de datos.
+- **Los fixtures pasan por los tipos del contrato compartido.** Rollups horarios deterministas
+  (jornada laboral, VPN nocturna, ráfagas de IPS), 14 hallazgos abiertos y 3 resueltos, eventos
+  críticos, informes y el mapeo regla → control completo del §7.
+- **El fondo tinta lo lleva la columna, no la barra fija.** La barra lateral es `sticky` dentro de
+  una columna `bg-ink` que se estira; si el `bg-ink` va en el elemento `h-dvh`, el color se corta
+  a la altura de la ventana y el resto de la columna queda blanco en páginas largas.
+- En móvil la barra de postura se oculta bajo 640 px: con la etiqueta y el número no queda ancho
+  útil, y una barra de 10 px no informa, solo ensucia.
+
 #### Auto-blindaje: rejillas sin columna base desbordan en móvil
 
 `grid ... lg:grid-cols-[...]` sin definir columnas en el ancho base deja la columna en `auto`.

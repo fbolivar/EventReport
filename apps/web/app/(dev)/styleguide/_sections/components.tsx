@@ -20,14 +20,14 @@ import {
   DEMO_ISO_CONTROLS,
   DEMO_ISO_COVERAGE,
 } from "@/lib/fixtures/compliance";
-import { DEMO_FINDINGS, DEMO_REMEDIATIONS } from "@/lib/fixtures/findings";
+import { DEMO_FINDINGS, DEMO_REMEDIATIONS, findingById } from "@/lib/fixtures/findings";
 import { DEMO_SCORE, DEMO_SEVERITY_COUNTS, DEMO_TREND } from "@/lib/fixtures/posture";
 import { RULES_BY_CODE } from "@/lib/fixtures/rules";
 import { Row, Section } from "./shell";
 
 const iso = DEMO_FRAMEWORKS[0];
 const criticalFinding = DEMO_FINDINGS[0];
-const resolvedFinding = DEMO_FINDINGS[4];
+const resolvedFinding = findingById("fnd-015");
 
 export function ComponentSections() {
   return (
