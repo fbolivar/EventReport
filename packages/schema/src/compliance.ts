@@ -44,14 +44,6 @@ export const CONTROL_STATUSES = [
 
 export type ControlStatus = (typeof CONTROL_STATUSES)[number];
 
-export const CONTROL_STATUS_LABELS: Record<ControlStatus, string> = {
-  compliant: "Cumple",
-  non_compliant: "No cumple",
-  partial: "Parcial",
-  not_assessable: "No evaluable",
-  not_applicable: "Fuera de alcance",
-};
-
 export interface ComplianceAssessment {
   frameworkCode: FrameworkCode;
   controlCode: string;

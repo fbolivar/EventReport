@@ -20,15 +20,6 @@ export const RULE_DOMAINS = ["access", "policy", "vpn", "crypto", "logging", "ma
 
 export type RuleDomain = (typeof RULE_DOMAINS)[number];
 
-export const RULE_DOMAIN_LABELS: Record<RuleDomain, string> = {
-  access: "Acceso administrativo",
-  policy: "Políticas y NAT",
-  vpn: "VPN y acceso remoto",
-  crypto: "Cifrado y certificados",
-  logging: "Registro y monitoreo",
-  maintenance: "Mantenimiento y licencias",
-};
-
 export interface RuleRemediation {
   ruleCode: RuleCode;
   brand: Brand;

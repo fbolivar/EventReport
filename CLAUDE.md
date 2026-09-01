@@ -39,3 +39,8 @@ supabase start           # stack local
 supabase db reset        # migraciones + seed
 supabase gen types typescript --local > apps/web/lib/supabase/types.ts
 ```
+
+**Detener `pnpm dev` antes de `pnpm build`.** Los dos escriben en `apps/web/.next`; si el build
+corre con el servidor levantado, reemplaza los chunks que el proceso tiene cargados y el
+siguiente request falla con `Cannot find module './15.js'`. Recuperación: matar el proceso del
+puerto 3000, borrar `apps/web/.next` y relanzar `pnpm dev`.
