@@ -37,3 +37,6 @@ coverage/
 
 # playwright mcp scratch
 .playwright-mcp/
+
+# payload temporal del simulador de colector
+.tmp-config.json

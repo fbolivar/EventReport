@@ -1,9 +1,9 @@
 /**
  * Tenant-side entities of the portal (docs/diseno-tecnico.md sections 9 and 10).
  */
-import type { Brand, Capabilities, Timestamp } from "./common";
-import type { CollectorHealth } from "./event";
-import type { FrameworkCode } from "./compliance";
+import type { Brand, Capabilities, Timestamp } from "./common.ts";
+import type { CollectorHealth } from "./event.ts";
+import type { FrameworkCode } from "./compliance.ts";
 
 export type PlanCode = "basic" | "standard" | "premium";
 

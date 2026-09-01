@@ -322,6 +322,37 @@ ilustración.
   `tenant_member_profiles()`, SECURITY DEFINER con el filtro de membresía **dentro** de la
   función: nadie puede pedir los miembros de un tenant ajeno.
 
+### Bloque 6 — motor de reglas (2026-09-01)
+
+- **`packages/rules` es código puro y probado**: 15 pruebas con `node --test`, sin base de datos y
+  sin red. Cada prueba parte de una configuración limpia y rompe **una sola cosa**, así que un
+  fallo señala una regla, no un sistema.
+- **`evaluate()` y `reconcile()` están separadas a propósito.** La primera dice qué es verdad del
+  equipo ahora; la segunda convierte eso en ciclo de vida contra lo que la base ya tenía: lo que
+  persiste conserva su `first_seen`, lo que desaparece **se resuelve, no se borra**, y un hallazgo
+  que el cliente aceptó como riesgo sigue aceptado — el motor no pisa una decisión humana.
+- **Una regla que la marca no puede evaluar no es un aprobado.** `requires(capabilities)` la marca
+  `evaluable: false` y el informe de cumplimiento lo declara, en vez de darla por correcta.
+- **El instante de evaluación se inyecta** (`now`), no se lee del reloj: sin eso las reglas con
+  ventana temporal (FW-007, FW-013, FW-016, OP-001) no serían reproducibles en pruebas.
+- El motor corre en la Edge Function `ingest-config`, que es donde un snapshot se vuelve informe:
+  guarda la configuración, evalúa, reconcilia y recalcula el score.
+- `supabase/functions/build-shared.mjs` copia `packages/schema` y `packages/rules` dentro de la
+  función. Las Edge Functions corren en Deno y se despliegan solas: no pueden resolver un workspace
+  de pnpm. Copiar es mejor que duplicar, porque la copia se genera y nunca se edita: el motor que
+  corre en la nube es el mismo byte a byte que cubren las pruebas.
+
+#### Auto-blindaje: un score que toca fondo deja de informar
+
+La primera fórmula restaba una penalización lineal (`peso / superficie`). Al probarla contra un
+firewall real y roto —administración en la WAN, política any→any, escritorio remoto publicado— dio
+**configuración 0**. Un score en cero no distingue entre malo y catastrófico, y sobre todo no
+permite mostrar mejora: el cliente arregla dos cosas y sigue viendo 0.
+
+Se cambió por una penalización saturante (`peso / (peso + superficie)`), que nunca llega a cero y
+sigue siendo monótona. El mismo firewall pasó de 0 a 24 en configuración, y de 24 a 41 en total.
+Se detectó ejecutando el motor contra la función desplegada, no leyendo el código.
+
 #### Auto-blindaje: un usuario creado por SQL rompe el login
 
 Insertar en `auth.users` deja en NULL columnas que GoTrue lee como cadenas no nulas

@@ -10,7 +10,7 @@
  * These are skeletons: shape, validation and error handling are real, the
  * business logic lands with the collector in phase 1.
  */
-import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export interface CollectorContext {
   collectorId: string;
@@ -112,11 +112,11 @@ export async function withinQuota(
 
   const { data: quota } = await context.admin
     .from("usage_quotas")
-    .select(limitColumn)
+    .select("critical_events_per_day, config_snapshots_per_day")
     .eq("tenant_id", context.tenantId)
     .maybeSingle();
 
-  const limit = quota?.[limitColumn] ?? 0;
+  const limit = Number(quota?.[limitColumn] ?? 0);
 
   const { data: counter } = await context.admin
     .from("usage_counters")
