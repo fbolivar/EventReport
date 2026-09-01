@@ -1,14 +1,10 @@
 import Link from "next/link";
-import type { Finding } from "@eventreport/schema";
+import type { Finding, FindingRule, Firewall, RuleControl } from "@eventreport/schema";
 
 import { RemediationSteps } from "@/components/app/findings/remediation-steps";
 import { SeverityBadge } from "@/components/app/findings/severity-badge";
 import { Value } from "@/components/shared/value";
 import { BRAND_LABELS, FINDING_STATUS_LABELS, FRAMEWORK_SHORT_LABELS } from "@/content/labels";
-import { remediationFor } from "@/lib/fixtures/findings";
-import { RULES_BY_CODE } from "@/lib/fixtures/rules";
-import { firewallById } from "@/lib/fixtures/tenant";
-import { RULE_CONTROLS } from "@/lib/fixtures/rule-controls";
 import { formatDate } from "@/lib/utils/format";
 
 /**
@@ -18,15 +14,20 @@ import { formatDate } from "@/lib/utils/format";
  */
 export function FindingDrawer({
   finding,
+  rule,
+  firewall,
+  remediation: steps,
+  ruleControls,
   closeHref,
 }: {
   finding: Finding;
+  rule?: FindingRule;
+  firewall?: Firewall;
+  remediation?: string[];
+  ruleControls: RuleControl[];
   closeHref: string;
 }) {
-  const rule = RULES_BY_CODE[finding.ruleCode];
-  const firewall = firewallById(finding.firewallId);
-  const steps = firewall ? remediationFor(finding.ruleCode, firewall.brand) : undefined;
-  const controls = RULE_CONTROLS.filter((row) => row.ruleCode === finding.ruleCode);
+  const controls = ruleControls.filter((row) => row.ruleCode === finding.ruleCode);
   const evaluable = firewall
     ? !firewall.capabilities.unevaluableRules.includes(finding.ruleCode)
     : true;

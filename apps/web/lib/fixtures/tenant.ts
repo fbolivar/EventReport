@@ -5,7 +5,7 @@
  */
 import type { Capabilities, Collector, Firewall, Site, Tenant, TenantMember } from "@eventreport/schema";
 
-import { DEMO_COLLECTOR_DEGRADED, DEMO_COLLECTOR_HEALTH } from "@/lib/fixtures/collector";
+import { DEMO_COLLECTOR_DEGRADED, DEMO_COLLECTOR_HEALTH } from "./collector.ts";
 
 /** Momento de referencia de todos los fixtures: fijo, para que nada cambie entre capturas. */
 export const NOW = "2026-08-31T03:00:00Z";

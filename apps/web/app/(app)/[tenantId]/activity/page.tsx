@@ -7,12 +7,8 @@ import { PageHeader } from "@/components/app/shell/page-header";
 import { Surface, SurfaceBody, SurfaceHeader } from "@/components/shared/surface";
 import { Value } from "@/components/shared/value";
 import { TOPN_DIMENSION_LABELS } from "@/content/labels";
-import {
-  DEMO_TOPN,
-  hourOfDayAverage,
-  tenantActivity,
-  toDaily,
-} from "@/lib/fixtures/activity";
+import { hourOfDayAverage, toDaily } from "@/lib/fixtures/activity";
+import { activitySeries, topN } from "@/lib/data/activity";
 import { formatBytes, formatNumber } from "@/lib/utils/format";
 
 export const metadata: Metadata = { title: "Actividad" };
@@ -34,7 +30,14 @@ export default async function ActivityPage({
   const { range } = await searchParams;
   const days = Number(range) || 30;
 
-  const hourly = tenantActivity(days);
+  const [hourly, apps, countries, categories, deniedIps, vpnUsers] = await Promise.all([
+    activitySeries(days),
+    topN("app", days),
+    topN("src_country", days),
+    topN("web_category", days),
+    topN("src_ip_denied", days),
+    topN("vpn_user", days),
+  ]);
   const daily = toDaily(hourly);
   const hours = hourOfDayAverage(hourly);
 
@@ -95,21 +98,21 @@ export default async function ActivityPage({
         <Surface>
           <SurfaceHeader title={TOPN_DIMENSION_LABELS.app} meta="Por número de sesiones" />
           <SurfaceBody>
-            <TopList entries={DEMO_TOPN.app} unit="sesiones" />
+            <TopList entries={apps} unit="sesiones" />
           </SurfaceBody>
         </Surface>
 
         <Surface>
           <SurfaceHeader title={TOPN_DIMENSION_LABELS.src_country} meta="Origen del tráfico" />
           <SurfaceBody>
-            <TopList entries={DEMO_TOPN.src_country} unit="eventos" />
+            <TopList entries={countries} unit="eventos" />
           </SurfaceBody>
         </Surface>
 
         <Surface>
           <SurfaceHeader title={TOPN_DIMENSION_LABELS.web_category} meta="Categorías web" />
           <SurfaceBody>
-            <TopList entries={DEMO_TOPN.web_category} unit="solicitudes" />
+            <TopList entries={categories} unit="solicitudes" />
           </SurfaceBody>
         </Surface>
 
@@ -119,14 +122,14 @@ export default async function ActivityPage({
             meta="Lo que el firewall bloqueó en el borde"
           />
           <SurfaceBody>
-            <TopList entries={DEMO_TOPN.src_ip_denied} unit="intentos" />
+            <TopList entries={deniedIps} unit="intentos" />
           </SurfaceBody>
         </Surface>
 
         <Surface>
           <SurfaceHeader title={TOPN_DIMENSION_LABELS.vpn_user} meta="Sesiones de VPN" />
           <SurfaceBody>
-            <TopList entries={DEMO_TOPN.vpn_user} unit="conexiones" />
+            <TopList entries={vpnUsers} unit="conexiones" />
           </SurfaceBody>
         </Surface>
       </div>

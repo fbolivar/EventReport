@@ -3,11 +3,20 @@
 import Link from "next/link";
 import { useSelectedLayoutSegment } from "next/navigation";
 
+import type { CollectorHealth, PlanCode } from "@eventreport/schema";
+
 import { Logo } from "@/components/shared/logo";
 import { Value } from "@/components/shared/value";
 import { COLLECTOR_STATUS_LABELS } from "@/content/labels";
-import { DEMO_COLLECTORS, DEMO_TENANT } from "@/lib/fixtures/tenant";
+import { signOutAction } from "@/app/(auth)/login/actions";
+import { signOut } from "@/content/auth";
 import { cn } from "@/lib/utils/cn";
+
+export interface SidebarCollector {
+  id: string;
+  name: string;
+  status: CollectorHealth["status"];
+}
 
 const SECTIONS = [
   { slug: "dashboard", label: "Resumen" },
@@ -32,7 +41,17 @@ const STATUS_DOT = {
  * Es el único componente de cliente del portal, y solo para saber qué sección
  * está abierta: el resto se renderiza en el servidor.
  */
-export function AppSidebar({ tenantId }: { tenantId: string }) {
+export function AppSidebar({
+  tenantId,
+  tenantName,
+  plan,
+  collectors,
+}: {
+  tenantId: string;
+  tenantName: string;
+  plan: PlanCode;
+  collectors: SidebarCollector[];
+}) {
   const active = useSelectedLayoutSegment();
 
   return (
@@ -72,21 +91,27 @@ export function AppSidebar({ tenantId }: { tenantId: string }) {
         <div className="mt-auto hidden border-t border-ink-line pt-4 lg:block">
           <p className="text-micro text-on-ink-soft">Colectores</p>
           <ul className="mt-2 space-y-2">
-            {DEMO_COLLECTORS.map((collector) => (
+            {collectors.map((collector) => (
               <li key={collector.id} className="flex items-center gap-2">
-                <span
-                  className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[collector.health.status])}
-                />
+                <span className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[collector.status])} />
                 <Value className="truncate text-micro text-on-ink">{collector.name}</Value>
                 <span className="ml-auto shrink-0 text-micro text-on-ink-soft">
-                  {COLLECTOR_STATUS_LABELS[collector.health.status]}
+                  {COLLECTOR_STATUS_LABELS[collector.status]}
                 </span>
               </li>
             ))}
           </ul>
           <p className="mt-4 text-micro text-on-ink-soft">
-            {DEMO_TENANT.name} · plan {DEMO_TENANT.plan}
+            {tenantName} · plan {plan}
           </p>
+          <form action={signOutAction} className="mt-3">
+            <button
+              type="submit"
+              className="rounded-control text-micro text-on-ink-soft transition-colors duration-[var(--er-duration-fast)] hover:text-on-ink"
+            >
+              {signOut.label}
+            </button>
+          </form>
         </div>
       </div>
     </aside>

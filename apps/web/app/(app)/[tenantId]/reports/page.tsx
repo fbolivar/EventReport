@@ -9,16 +9,12 @@ import { Skeleton } from "@/components/shared/states";
 import { Surface, SurfaceBody, SurfaceHeader } from "@/components/shared/surface";
 import { Value } from "@/components/shared/value";
 import { FRAMEWORK_SHORT_LABELS, REPORT_TYPE_LABELS } from "@/content/labels";
-import { DEMO_REPORTS } from "@/lib/fixtures/events";
-import { openCountsBySeverity, findingById, remediationFor } from "@/lib/fixtures/findings";
-import { DEMO_SCORE } from "@/lib/fixtures/posture";
-import { RULES_BY_CODE } from "@/lib/fixtures/rules";
-import { DEMO_TENANT } from "@/lib/fixtures/tenant";
+import { countsBySeverity, listFindings, remediationFor, rulesByCode } from "@/lib/data/findings";
+import { listReports, postureScore } from "@/lib/data/posture";
+import { getTenant, listFirewalls } from "@/lib/data/tenant";
 import { formatDate } from "@/lib/utils/format";
 
 export const metadata: Metadata = { title: "Informes" };
-
-const preview = findingById("fnd-001");
 
 export default async function ReportsPage({
   params,
@@ -26,6 +22,25 @@ export default async function ReportsPage({
   params: Promise<{ tenantId: string }>;
 }) {
   const { tenantId } = await params;
+
+  const [tenant, reports, score, findings, rules, firewalls] = await Promise.all([
+    getTenant(tenantId),
+    listReports(),
+    postureScore(),
+    listFindings(),
+    rulesByCode(),
+    listFirewalls(),
+  ]);
+
+  // El riesgo principal de la vista previa: el hallazgo abierto más grave.
+  const preview = findings.find((finding) => finding.status === "open");
+  const previewFirewall = preview
+    ? firewalls.find((item) => item.id === preview.firewallId)
+    : undefined;
+  const previewSteps =
+    preview && previewFirewall
+      ? await remediationFor(preview.ruleCode, previewFirewall.brand)
+      : undefined;
 
   return (
     <div className="space-y-8">
@@ -37,10 +52,10 @@ export default async function ReportsPage({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
         <Surface>
-          <SurfaceHeader title="Generados" meta={`${DEMO_REPORTS.length} disponibles`} />
+          <SurfaceHeader title="Generados" meta={`${reports.length} disponibles`} />
           <SurfaceBody className="py-0">
             <ul className="divide-y divide-line">
-              {DEMO_REPORTS.map((report) => (
+              {reports.map((report) => (
                 <li key={report.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-4">
                   <div className="min-w-0 flex-1">
                     <p className="text-small font-medium">
@@ -82,22 +97,22 @@ export default async function ReportsPage({
         <Surface>
           <SurfaceHeader
             title="Vista previa"
-            meta={`Ejecutivo de ${DEMO_TENANT.name} · agosto 2026`}
+            meta={`Ejecutivo de ${tenant?.name ?? ""}`}
           />
           <SurfaceBody className="space-y-5">
-            <PostureScore score={DEMO_SCORE} />
+            {score ? <PostureScore score={score} /> : null}
             <div className="border-t border-line pt-4">
               <p className="text-micro text-ink-soft">Hallazgos abiertos</p>
-              <SeverityBreakdown counts={openCountsBySeverity()} className="mt-3" />
+              <SeverityBreakdown counts={countsBySeverity(findings)} className="mt-3" />
             </div>
             {preview ? (
               <div className="border-t border-line pt-4">
                 <p className="text-micro text-ink-soft">Riesgo principal</p>
                 <FindingCard
                   finding={preview}
-                  rule={RULES_BY_CODE[preview.ruleCode]!}
-                  brand="fortigate"
-                  remediation={remediationFor(preview.ruleCode, "fortigate")}
+                  rule={rules[preview.ruleCode]!}
+                  brand={previewFirewall?.brand}
+                  remediation={previewSteps}
                   className="mt-3"
                 />
               </div>

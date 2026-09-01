@@ -302,6 +302,37 @@ ilustración.
 - En móvil la barra de postura se oculta bajo 640 px: con la etiqueta y el número no queda ancho
   útil, y una barra de 10 px no informa, solo ensucia.
 
+### Bloque 5 — autenticación, datos reales y Edge Functions (2026-09-01)
+
+- **El portal dejó de leer fixtures.** `lib/data/*` devuelve los mismos tipos del contrato
+  compartido que devolvían los fixtures, así que ningún componente cambió de forma: solo pasaron
+  a recibir por props lo que antes importaban (`FindingsTable`, `FindingDrawer`,
+  `CriticalEventList`, `AppSidebar`). Los fixtures siguen vivos para `/styleguide` y la landing.
+- **Ninguna consulta filtra por tenant a mano.** Lo hace RLS. Si una consulta devolviera filas de
+  otro cliente sería un fallo de la base, no de la interfaz, y por eso la prueba de RLS con dos
+  tenants vale más que cualquier revisión del código de la página.
+- **El motor de cumplimiento salió a `lib/compliance/derive.ts`**, función pura. La usan los
+  fixtures y las consultas a Supabase, y dará el mismo resultado cuando el cálculo se ejecute en
+  el servidor. Verificado: con datos reales, PCI DSS da los mismos 20 controles evaluables, 4 que
+  cumplen y 16 que no.
+- **La comparación del score es contra hace un mes, no contra ayer.** Con datos diarios reales el
+  delta diario era 0 y la tarjeta decía "▲ 0 puntos", que no informa nada. El informe es mensual;
+  la comparación también.
+- El correo de los miembros vive en `auth.users`, que no se expone por la API. Lo entrega
+  `tenant_member_profiles()`, SECURITY DEFINER con el filtro de membresía **dentro** de la
+  función: nadie puede pedir los miembros de un tenant ajeno.
+
+#### Auto-blindaje: un usuario creado por SQL rompe el login
+
+Insertar en `auth.users` deja en NULL columnas que GoTrue lee como cadenas no nulas
+(`confirmation_token`, `recovery_token`, `email_change*`, `reauthentication_token`), y el endpoint
+de token responde `500 Database error querying schema` sin decir por qué. El formulario solo veía
+"error inesperado".
+
+Se encontró llamando al endpoint de auth con `curl`, no depurando la interfaz: la capa que falla
+es la que hay que interrogar. **Regla:** un usuario creado por SQL lleva esas columnas en `''`;
+lo natural es crearlos por la API de administración cuando exista el flujo de invitación.
+
 #### Auto-blindaje: rejillas sin columna base desbordan en móvil
 
 `grid ... lg:grid-cols-[...]` sin definir columnas en el ancho base deja la columna en `auto`.
