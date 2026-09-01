@@ -980,3 +980,27 @@ reinicio, y una sede con dos firewalls es lo normal.
 
 **Regla:** una pantalla no puede afirmar un estado que el programa no ha alcanzado. Si dice
 "midiendo", que esté midiendo.
+
+#### Un equipo viejo tumbaba el colector entero
+
+En la primera instalación real, el colector arrancó y murió en la misma línea:
+
+```
+msg=midiendo
+msg="el colector se detuvo" error="no se pudo descifrar: ¿frase de paso incorrecta?"
+```
+
+El archivo de configuración conservaba un firewall de un intento anterior, cifrado con otra frase
+de paso. El arranque abría **todas** las credenciales y devolvía el primer error, así que un
+equipo obsoleto dejaba sin datos a los equipos que sí funcionaban.
+
+Dos cambios:
+
+- **Un equipo que no se puede abrir se omite**, con un registro que dice cuál y qué hacer. Solo si
+  ninguno abre se detiene, y entonces el mensaje explica que hay que reconectarlos.
+- **El asistente limpia lo que estorba**: al conectar, el técnico acaba de demostrar cuál es la
+  frase correcta, así que las entradas que no abren con ella —o que apuntan al mismo equipo o al
+  mismo host— se descartan en vez de acumularse.
+
+**Regla:** en un proceso que atiende a varios equipos, el fallo de uno se aísla. Un error de
+configuración de ayer no puede dejar ciego lo que hoy funciona.

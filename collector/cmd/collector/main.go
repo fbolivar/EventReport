@@ -383,17 +383,22 @@ func (c *collectorDevice) Connect(ctx context.Context, host, token, passphrase s
 	device.FirewallID = answer.FirewallID
 	device.TokenEncrypted = sealed
 
-	replaced := false
-	for index, existing := range file.Devices {
-		if existing.FirewallID == device.FirewallID {
-			file.Devices[index] = device
-			replaced = true
-			break
+	// El técnico acaba de demostrar cuál es la frase correcta: lo que no se abra
+	// con ella es basura de un intento anterior y estorba. Se descarta junto con
+	// cualquier entrada del mismo equipo o del mismo host.
+	kept := make([]config.Device, 0, len(file.Devices)+1)
+	for _, existing := range file.Devices {
+		if existing.FirewallID == device.FirewallID || existing.Host == device.Host {
+			continue
 		}
+		if _, err := config.Decrypt(existing.TokenEncrypted, passphrase); err != nil {
+			c.logger.Warn("se descarta un firewall que no abre con esta frase de paso",
+				"firewall", existing.FirewallID, "host", existing.Host)
+			continue
+		}
+		kept = append(kept, existing)
 	}
-	if !replaced {
-		file.Devices = append(file.Devices, device)
-	}
+	file.Devices = append(kept, device)
 
 	if err := config.Save(c.path, file); err != nil {
 		return setup.Identity{}, err
@@ -638,11 +643,23 @@ func collect(ctx context.Context, path, passphrase string, logger *slog.Logger) 
 		return err
 	}
 
+	// Un equipo que no se puede abrir se salta; no tumba al colector.
+	//
+	// Pasó en la primera instalación real: un equipo de un intento anterior,
+	// cifrado con otra frase de paso, detenía la recolección entera y el
+	// cliente se quedaba sin datos de los equipos que sí funcionaban.
 	devices := make([]pipeline.Device, 0, len(file.Devices))
+	skipped := 0
 	for _, device := range file.Devices {
 		built, err := buildAdapter(device, passphrase)
 		if err != nil {
-			return err
+			skipped++
+			logger.Error("no se pudo abrir la credencial de un firewall; se omite",
+				"firewall", device.FirewallID,
+				"host", device.Host,
+				"detalle", err,
+				"solucion", "vuelve a conectarlo desde el asistente con la frase correcta")
+			continue
 		}
 		devices = append(devices, pipeline.Device{
 			FirewallID: device.FirewallID,
@@ -651,6 +668,9 @@ func collect(ctx context.Context, path, passphrase string, logger *slog.Logger) 
 		})
 	}
 	if len(devices) == 0 {
+		if skipped > 0 {
+			return fmt.Errorf("ningún firewall se pudo abrir con esta frase de paso: vuelve a conectarlos desde el asistente")
+		}
 		return fmt.Errorf("no hay firewalls configurados: agrégalos con el asistente del portal")
 	}
 
