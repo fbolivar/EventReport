@@ -760,3 +760,22 @@ membresía por dentro: **el argumento acota, no autoriza**.
 **Regla:** en una aplicación multiempresa, RLS es la frontera de seguridad y el filtro por la
 empresa de la URL es la de corrección. Faltando el segundo, el error no es un rechazo: son datos
 de más, que es peor. Y no se ve con un solo cliente en la base.
+
+#### Auto-blindaje: reconstruir la respuesta del middleware borra las cookies de sesión
+
+Marcar la empresa de la URL en un encabezado rompió el inicio de sesión: *"An unexpected response
+was received from the server"* al pulsar Entrar. La causa no estaba en el formulario. En
+`updateSession`, `response` se reconstruye cada vez que Supabase escribe cookies —eso es lo que
+refresca la sesión—, y yo lo reconstruía **después**, con `NextResponse.next({ request })`,
+tirando esas cookies a la basura. El usuario se autenticaba y salía sin sesión.
+
+Arreglo: el encabezado se pone sobre `request` **antes** de crear el cliente; toda respuesta
+derivada de esa petición ya lo lleva. **Regla:** en el middleware, `NextResponse.next({ request })`
+se llama una vez al principio y solo se vuelve a llamar dentro de `setAll`. Cualquier otra
+reconstrucción descarta lo que Supabase acababa de escribir.
+
+En el mismo arreglo apareció otro defecto: el `next` del inicio de sesión se validaba contra la
+**primera** empresa del usuario. Quien administra varias pedía `/nortis/findings`, se le exigía
+sesión y terminaba en `/acme/dashboard`. Ahora se valida contra todas las empresas de las que es
+miembro —la lista sale de RLS—, así que un `next` inventado sigue sin llevar a nadie donde no
+tiene acceso.
