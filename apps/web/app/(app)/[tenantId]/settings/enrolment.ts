@@ -3,7 +3,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 
-import { tenantUuid } from "@/lib/data/tenant";
+import { getTenant, tenantUuid } from "@/lib/data/tenant";
+import { linuxInstaller, windowsInstaller } from "./installer";
 import { createClient } from "@/lib/supabase/server";
 
 export interface EnrolmentState {
@@ -11,6 +12,8 @@ export interface EnrolmentState {
   /** El token en claro. Existe solo en esta respuesta y no se vuelve a mostrar. */
   token?: string;
   command?: string;
+  /** El instalador, ya con el token dentro: el cliente no copia nada. */
+  installer?: { windows: string; linux: string; filename: string };
 }
 
 /** Vale 24 horas: suficiente para instalar hoy, inútil si se filtra mañana. */
@@ -70,9 +73,31 @@ export async function createEnrolmentToken(
   revalidatePath(`/${tenantSlug}/settings`);
 
   const base = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const tenant = await getTenant(tenantSlug);
+  const downloads = `${base}/storage/v1/object/public/downloads`;
+  const input = {
+    token,
+    supabaseUrl: base,
+    tenantName: tenant?.name ?? tenantSlug,
+    downloadUrl: "",
+  };
+
   return {
     token,
-    command: `collector enroll -token ${token} -url ${base}`,
+    // El comando queda para quien prefiera consola; el camino normal es el
+    // instalador, que no pide escribir nada.
+    command: `collector setup -token ${token} -url ${base}`,
+    installer: {
+      windows: windowsInstaller({
+        ...input,
+        downloadUrl: `${downloads}/eventreport-collector-windows-amd64.exe`,
+      }),
+      linux: linuxInstaller({
+        ...input,
+        downloadUrl: `${downloads}/eventreport-collector-linux-amd64`,
+      }),
+      filename: `instalar-eventreport-${tenantSlug}`,
+    },
   };
 }
 

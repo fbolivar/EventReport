@@ -9,12 +9,12 @@ import { createEnrolmentToken, type EnrolmentState } from "./enrolment";
 const initialState: EnrolmentState = {};
 
 /**
- * Emite el token y lo muestra **una sola vez**.
+ * Alta de un colector, sin comandos.
  *
- * No hay forma de volver a verlo: en la base solo queda el hash. Por eso la
- * pantalla lo dice antes de que el operador cierre la ventana, y entrega el
- * comando completo en vez del token suelto — lo que se pega en la máquina del
- * cliente es el comando.
+ * El botón entrega un instalador con el token ya dentro: el cliente lo ejecuta
+ * y el asistente se abre en su navegador. No hay nada que copiar, y el token
+ * —que se muestra una sola vez porque en la base solo queda un hash— viaja
+ * dentro del archivo en vez de por un chat.
  */
 export function EnrolmentForm({
   tenantId,
@@ -24,6 +24,16 @@ export function EnrolmentForm({
   sites: Array<{ id: string; name: string; city: string }>;
 }) {
   const [state, action, pending] = useActionState(createEnrolmentToken, initialState);
+
+  function download(content: string, filename: string) {
+    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="space-y-4">
@@ -57,8 +67,8 @@ export function EnrolmentForm({
             className="mt-1 h-9 w-full rounded-control border border-line bg-paper px-3 text-small"
           />
         </div>
-        <Button type="submit" variant="secondary" size="sm" disabled={pending}>
-          {pending ? "Emitiendo…" : "Emitir token"}
+        <Button type="submit" disabled={pending}>
+          {pending ? "Preparando…" : "Agregar colector"}
         </Button>
       </form>
 
@@ -68,20 +78,48 @@ export function EnrolmentForm({
         </p>
       ) : null}
 
-      {state.token ? (
-        <div className="rounded-control border border-line bg-mist p-4">
-          <p className="text-small font-medium">Cópialo ahora: no se vuelve a mostrar.</p>
-          <p className="mt-1 text-micro text-ink-soft">
-            Guardamos solo un hash, así que nadie —tampoco nosotros— puede recuperarlo. Vence en 24
-            horas y sirve una sola vez.
-          </p>
-          <p className="mt-3 break-all rounded-control bg-paper px-3 py-2 text-small">
-            <Value>{state.token}</Value>
-          </p>
-          <p className="mt-3 text-micro text-ink-soft">En la máquina del cliente:</p>
-          <p className="mt-1 break-all rounded-control bg-paper px-3 py-2 text-micro">
-            <Value>{state.command}</Value>
-          </p>
+      {state.installer ? (
+        <div className="space-y-4 rounded-control border border-line bg-mist p-4">
+          <div>
+            <p className="text-small font-medium">Descarga el instalador y ejecútalo en la máquina del cliente.</p>
+            <p className="mt-1 text-micro text-ink-soft">
+              Ya trae el registro dentro. Al ejecutarlo se abre el asistente en el navegador de esa
+              máquina para conectar el firewall. Vence en 24 horas y sirve una sola vez.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() =>
+                download(state.installer!.windows, `${state.installer!.filename}.ps1`)
+              }
+            >
+              Windows
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => download(state.installer!.linux, `${state.installer!.filename}.sh`)}
+            >
+              Linux
+            </Button>
+          </div>
+
+          <details>
+            <summary className="cursor-pointer text-micro text-ink-soft">
+              Prefiero hacerlo por consola
+            </summary>
+            <p className="mt-2 break-all rounded-control bg-paper px-3 py-2 text-micro">
+              <Value>{state.command}</Value>
+            </p>
+            <p className="mt-2 text-micro text-ink-soft">
+              El colector se descarga de{" "}
+              <Value>{`${process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""}/storage/v1/object/public/downloads/`}</Value>
+            </p>
+          </details>
         </div>
       ) : null}
     </div>

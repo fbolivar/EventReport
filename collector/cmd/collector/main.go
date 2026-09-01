@@ -20,8 +20,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -32,6 +34,7 @@ import (
 	"github.com/fbolivar/eventreport/collector/internal/buffer"
 	"github.com/fbolivar/eventreport/collector/internal/config"
 	"github.com/fbolivar/eventreport/collector/internal/pipeline"
+	"github.com/fbolivar/eventreport/collector/internal/setup"
 	"github.com/fbolivar/eventreport/collector/internal/syslog"
 	"github.com/fbolivar/eventreport/collector/internal/transport"
 	"github.com/fbolivar/eventreport/collector/internal/vault"
@@ -43,6 +46,7 @@ const version = "0.1.0"
 const usage = `EventReport collector
 
 Uso:
+  collector setup -token <token> -url <url-supabase>     asistente en el navegador
   collector enroll -token <token> -url <url-supabase>   registra este colector
   collector device add -brand <marca> -host <url> -token <token>  registra un firewall
   collector run                                          recibe, agrega y envía
@@ -70,6 +74,8 @@ func main() {
 		err = runEnroll(args, logger)
 	case "run":
 		err = runCollector(args, logger)
+	case "setup":
+		err = runSetup(args, logger)
 	case "device":
 		err = runDevice(args, logger)
 	case "test":
@@ -216,6 +222,175 @@ func postEnrolment(baseURL string, payload map[string]any) (enrolmentAnswer, err
 		return answer, err
 	}
 	return answer, nil
+}
+
+// runSetup es el camino sin comandos: enrola si hace falta y abre el asistente
+// en el navegador.
+//
+// Es lo que ejecuta el instalador que el cliente descarga del portal. La clave
+// de la API del firewall se escribe en esa página, que corre aquí y solo
+// escucha en loopback: nunca viaja al SaaS.
+func runSetup(args []string, logger *slog.Logger) error {
+	set := flag.NewFlagSet("setup", flag.ExitOnError)
+	path := configFlag(set)
+	token := set.String("token", "", "token de enrolamiento emitido por el portal")
+	baseURL := set.String("url", "", "URL del proyecto Supabase")
+	addr := set.String("addr", "127.0.0.1:8899", "dirección del asistente")
+	open := set.Bool("open", true, "abrir el navegador automáticamente")
+	if err := set.Parse(args); err != nil {
+		return err
+	}
+
+	// Enrolar es idempotente desde fuera: si ya hay configuración, se respeta.
+	// Un doble clic de más no puede dejar al cliente con dos colectores.
+	if _, err := config.Load(*path); err != nil {
+		if *token == "" || *baseURL == "" {
+			return fmt.Errorf("este colector no está registrado: falta -token y -url")
+		}
+		enrollArgs := []string{"-token", *token, "-url", *baseURL, "-config", *path}
+		if err := runEnroll(enrollArgs, logger); err != nil {
+			return err
+		}
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if *open {
+		openBrowser("http://" + *addr)
+	}
+
+	fmt.Printf("\n  Abre http://%s para conectar tu firewall.\n  Esta ventana puede quedarse abierta.\n\n", *addr)
+	return setup.Serve(ctx, *addr, &collectorDevice{path: *path, logger: logger}, logger)
+}
+
+// collectorDevice conecta el asistente con lo que el colector ya sabe hacer.
+type collectorDevice struct {
+	path   string
+	logger *slog.Logger
+}
+
+func (c *collectorDevice) Test(ctx context.Context, host, token string, insecure bool) (setup.Identity, error) {
+	built, err := buildAdapterWith(config.Device{Brand: "fortigate", Host: host}, token, insecure)
+	if err != nil {
+		return setup.Identity{}, err
+	}
+
+	snapshot, err := built.FetchConfig(ctx)
+	if err != nil {
+		return setup.Identity{}, err
+	}
+
+	return setup.Identity{
+		Hostname: snapshot.Device.Hostname,
+		Model:    snapshot.Device.Model,
+		Firmware: snapshot.Device.Firmware,
+	}, nil
+}
+
+func (c *collectorDevice) Connect(ctx context.Context, host, token, passphrase string, insecure bool) (setup.Identity, error) {
+	file, err := config.Load(c.path)
+	if err != nil {
+		return setup.Identity{}, err
+	}
+
+	device := config.Device{Brand: "fortigate", Host: host, Insecure: insecure, SourceIP: hostOnly(host)}
+	built, err := buildAdapterWith(device, token, insecure)
+	if err != nil {
+		return setup.Identity{}, err
+	}
+
+	snapshot, err := built.FetchConfig(ctx)
+	if err != nil {
+		return setup.Identity{}, err
+	}
+
+	key, err := file.SigningKey()
+	if err != nil {
+		return setup.Identity{}, err
+	}
+
+	client := transport.New(file.BaseURL, file.CollectorID, key)
+	response, err := client.Post(ctx, "register-device", map[string]any{
+		"brand":        snapshot.Device.Brand,
+		"hostname":     snapshot.Device.Hostname,
+		"model":        snapshot.Device.Model,
+		"serial":       snapshot.Device.Serial,
+		"firmware":     snapshot.Device.Firmware,
+		"capabilities": snapshot.Capabilities,
+	})
+	if err != nil {
+		return setup.Identity{}, err
+	}
+	if response.Status != http.StatusOK {
+		return setup.Identity{}, fmt.Errorf("el portal no aceptó el equipo (%d)", response.Status)
+	}
+
+	var answer struct {
+		FirewallID string `json:"firewallId"`
+	}
+	if err := json.Unmarshal(response.Body, &answer); err != nil {
+		return setup.Identity{}, err
+	}
+
+	sealed, err := config.Encrypt(token, passphrase)
+	if err != nil {
+		return setup.Identity{}, err
+	}
+	device.FirewallID = answer.FirewallID
+	device.TokenEncrypted = sealed
+
+	replaced := false
+	for index, existing := range file.Devices {
+		if existing.FirewallID == device.FirewallID {
+			file.Devices[index] = device
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		file.Devices = append(file.Devices, device)
+	}
+
+	if err := config.Save(c.path, file); err != nil {
+		return setup.Identity{}, err
+	}
+
+	return setup.Identity{
+		Hostname:   snapshot.Device.Hostname,
+		Model:      snapshot.Device.Model,
+		Firmware:   snapshot.Device.Firmware,
+		SyslogAddr: file.SyslogAddr,
+	}, nil
+}
+
+func (c *collectorDevice) State() setup.State {
+	file, err := config.Load(c.path)
+	if err != nil {
+		return setup.State{}
+	}
+
+	state := setup.State{Enrolled: file.CollectorID != ""}
+	if len(file.Devices) > 0 {
+		state.Device = file.Devices[0].FirewallID
+		state.Host = file.Devices[0].Host
+	}
+	return state
+}
+
+// openBrowser abre la página del asistente. Si falla, no es un error: la
+// dirección queda impresa en la consola y el técnico la abre a mano.
+func openBrowser(url string) {
+	var command *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		command = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	case "darwin":
+		command = exec.Command("open", url)
+	default:
+		command = exec.Command("xdg-open", url)
+	}
+	_ = command.Start()
 }
 
 // runDevice registers the firewall this collector will watch.

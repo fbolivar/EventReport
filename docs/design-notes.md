@@ -905,3 +905,42 @@ certificado autofirmado:
 Los hallazgos que produjo el equipo simulado son exactamente los que su configuración merece:
 administración expuesta en WAN, administrador sin segundo factor y sin hosts de confianza,
 retención insuficiente, sin NTP y sin destino de syslog adicional.
+
+## Bloque 18 — Instalación sin comandos
+
+Un instalador que pide escribir comandos ya perdió a la mitad de los clientes. El onboarding
+quedó así: **descargar, doble clic, dos campos en el navegador**.
+
+- El portal genera un instalador **con el token de enrolamiento dentro** (`.ps1` para Windows,
+  `.sh` para Linux). No hay nada que copiar ni pegar, y el token —que solo se muestra una vez
+  porque en la base hay un hash— viaja dentro del archivo en vez de por un chat.
+- El script descarga el binario del bucket público `downloads`, ejecuta `collector setup` y el
+  asistente se abre solo en el navegador.
+- El binario se publica desde el propio proyecto. No hay que ir a buscarlo a ningún otro lado.
+
+#### Por qué la clave del firewall se pide en la máquina y no en el portal
+
+Es la decisión de fondo del bloque. Sería más cómodo pedir la IP y el token del firewall en
+Ajustes, pero entonces esa credencial viajaría al SaaS y quedaría en nuestra base: **un robo de
+nuestra base daría acceso a los firewalls de todos los clientes**. Es exactamente lo que el
+producto promete que no pasa (§4).
+
+La salida es un asistente que sirve el propio colector en `127.0.0.1:8899`: interfaz gráfica, sin
+comandos, y la credencial no sale de la máquina. La página escucha **solo en loopback** —quien
+esté en la misma oficina no puede abrirla— y no carga nada de internet, porque en una instalación
+la máquina puede no tener salida todavía.
+
+#### Los mensajes de error son parte del producto
+
+`x509: certificate signed by unknown authority` no le dice nada a quien está instalando. El
+asistente traduce: *"El equipo usa un certificado propio. Elige «Aceptar el certificado
+autofirmado» y vuelve a intentar."* Lo mismo con 401 —revisa la clave y los hosts de confianza— y
+con un tiempo de espera agotado. **Regla:** un error que el usuario puede corregir se escribe en
+términos de lo que tiene que hacer, no de lo que falló por dentro.
+
+#### Verificación
+
+Recorrido completo como un cliente, contra producción: se pulsó *Agregar colector* en el portal,
+se descargó `instalar-eventreport-acme.ps1`, se ejecutó, el asistente se abrió en el navegador, se
+llenaron dirección y clave, *Probar conexión* respondió `FGT60F-LAB · FortiGate 60F · v7.4.4`, y
+*Conectar* dejó el equipo registrado y el colector midiendo. Cero comandos escritos a mano.
