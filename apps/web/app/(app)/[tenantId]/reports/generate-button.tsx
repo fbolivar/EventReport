@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
-import type { ReportType } from "@eventreport/schema";
+import type { FrameworkCode, ReportType } from "@eventreport/schema";
 
 import { Button } from "@/components/shared/button";
 import { requestReport, type GenerateState } from "./actions";
@@ -16,11 +16,14 @@ const initialState: GenerateState = {};
 export function GenerateReportButton({
   tenantId,
   type = "executive",
+  framework,
   label = "Generar informe",
   variant = "primary",
 }: {
   tenantId: string;
   type?: ReportType;
+  /** Obligatorio para el informe de cumplimiento: uno por marco. */
+  framework?: FrameworkCode;
   label?: string;
   variant?: "primary" | "secondary";
 }) {
@@ -30,6 +33,7 @@ export function GenerateReportButton({
     <form action={formAction} className="flex flex-wrap items-center gap-3">
       <input type="hidden" name="tenant" value={tenantId} />
       <input type="hidden" name="type" value={type} />
+      {framework ? <input type="hidden" name="framework" value={framework} /> : null}
       <Button type="submit" variant={variant} disabled={pending}>
         {pending ? "Encargando…" : label}
       </Button>

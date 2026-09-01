@@ -6,7 +6,7 @@ import { ControlMatrix } from "@/components/app/compliance/control-matrix";
 import { ScopeNote } from "@/components/app/compliance/scope-note";
 import { FilterLinks } from "@/components/app/shell/filter-links";
 import { PageHeader } from "@/components/app/shell/page-header";
-import { ButtonLink } from "@/components/shared/button";
+import { GenerateReportButton } from "../reports/generate-button";
 import { Surface, SurfaceBody, SurfaceHeader } from "@/components/shared/surface";
 import { FRAMEWORK_SHORT_LABELS } from "@/content/labels";
 import { assessmentsFor, controlsFor, coverageFor, listFrameworks } from "@/lib/data/compliance";
@@ -48,9 +48,13 @@ export default async function CompliancePage({
         title="Cumplimiento"
         meta="Evidencia técnica del perímetro. No es una certificación."
         action={
-          <ButtonLink href={`/${tenantId}/reports`} variant="secondary">
-            Generar informe del marco
-          </ButtonLink>
+          <GenerateReportButton
+            tenantId={tenantId}
+            type="compliance"
+            framework={current}
+            label={`Informe de ${FRAMEWORK_SHORT_LABELS[current]}`}
+            variant="secondary"
+          />
         }
       />
 

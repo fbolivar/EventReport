@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
+import { scheduledClient } from "@/lib/supabase/scheduled";
 import type { Database } from "@/lib/supabase/types";
 
 /**
@@ -11,6 +12,11 @@ import type { Database } from "@/lib/supabase/types";
  * service_role key never touches this process; it belongs to Edge Functions.
  */
 export async function createClient() {
+  // La generación programada no tiene cookies ni sesión: cuando corre, entrega
+  // su propio cliente, acotado al tenant que está procesando (ver `scheduled`).
+  const scheduled = scheduledClient();
+  if (scheduled) return scheduled;
+
   const cookieStore = await cookies();
 
   return createServerClient<Database>(

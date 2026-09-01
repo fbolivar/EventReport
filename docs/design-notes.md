@@ -515,3 +515,69 @@ documento. Arreglo: `pdfText()` en `lib/reports/pdf-theme.ts` traduce los símbo
 venga de datos —evidencia, títulos, pasos, prosa del modelo— pasa por `pdfText()` antes de
 entrar en un `<Text>`. Si algún día se registra una fuente con Unicode completo, la función
 puede volverse identidad, pero no desaparecer.
+
+## Bloque 11 — Cumplimiento y entrega automática
+
+**El informe de cumplimiento** (§8, trimestral) es el documento que el auditor archiva: por cada
+control evaluable desde el firewall, su estado y la evidencia literal que lo sostiene. Tampoco
+interviene el modelo: si se regenera mañana tiene que decir exactamente lo mismo, o deja de ser
+evidencia.
+
+La portada empieza por el alcance, no por el resultado: "de los 93 controles del marco, 13 se
+pueden evaluar desde el firewall; los 80 restantes dependen de personas y procesos que este
+producto no observa". Un informe de cumplimiento que abre con lo que cumple y esconde su alcance
+en una nota al pie engaña al que lo lee. Los controles `not_assessable` se cuentan en la portada
+pero no se listan: veinte páginas de "no aplica a este producto" tapan lo que sí evaluamos.
+
+Se corrigió una contradicción aparente: un control que **cumple** se sostiene sobre hallazgos
+**cerrados**, y el PDF los mostraba con su severidad en rojo sin decir que estaban resueltos.
+Ahora cada evidencia dice su estado y su fecha.
+
+**La entrega automática.** `dueReports()` es una función pura —seis pruebas— que decide qué le
+toca a cada cliente según el plan (§10): ejecutivo mensual en básico, + hardening en estándar, +
+cumplimiento trimestral por marco en premium. Los períodos son **cerrados**: el mes pasado, el
+trimestre pasado. Un informe mensual emitido a mitad de mes no se puede comparar con el
+siguiente.
+
+`/api/cron/reports` decide y encarga; `/api/cron/render` renderiza **uno** por petición. La
+separación no es estética:
+
+- La memoización de la capa de datos (`cache()` de React) vive dentro de una petición. Un solo
+  request recorriendo varios tenants leería, en el segundo, los datos memoizados del primero:
+  un informe con datos de otra empresa. **Regla:** la generación programada procesa un tenant por
+  petición, siempre.
+- Cada PDF tarda hasta un minuto; repartidos, ninguno se acerca al límite de la función.
+
+#### El generador no tiene sesión, y RLS necesita una
+
+Es el problema de fondo del bloque. El portal se apoya en RLS para separar clientes y la capa de
+datos no filtra por tenant a mano —a propósito—. La generación automática no tiene usuario, así
+que corre con la clave de servicio, que **ignora RLS por completo**: usada tal cual, cada consulta
+del generador devolvería las filas de todos los clientes.
+
+Solución: `tenantScoped()` (`lib/supabase/tenant-scope.ts`) es un proxy que añade
+`.eq("tenant_id", …)` a cada `select`. El filtro deja de ser algo que alguien pueda olvidar y pasa
+a ser parte del cliente; `runAsTenant()` lo instala en un `AsyncLocalStorage` que `createClient()`
+consulta, así que la capa de datos funciona sin tocar una sola consulta. Las tablas de catálogo se
+declaran una por una y `tenants` se filtra por `id`, no por `tenant_id` —lo aprendimos fallando—.
+
+Ese proxy es lo único que separa a un cliente de otro en el camino programado, así que tiene
+pruebas propias (`tenant-scope.test.ts`, 5). **Regla:** la clave de servicio solo se usa a través
+de `runAsTenant`; nunca directamente para leer datos de un tenant.
+
+#### Auto-blindaje: un render muerto bloquea el informe para siempre
+
+El despacho cuenta un informe en `generating` como hecho, para no duplicarlo. Si el render muere
+—proceso caído, función sin tiempo—, esa fila se queda así y **ese informe no se vuelve a intentar
+nunca**. Apareció al reiniciar el servidor a mitad de una generación. Ahora el despacho marca como
+`failed` lo que lleve más de 30 minutos generando, antes de decidir qué falta.
+
+En la misma línea: la lista decía "17 disponibles" contando uno fallido. Un informe fallido no
+está disponible, y tampoco se puede esconder: ahora dice "16 disponibles · 1 fallido".
+
+#### Lo que falta para que esto entregue de verdad
+
+`supabase/scheduled-reports.sql` deja escrito el `pg_cron` que dispara el mes 1 a las 06:00 UTC,
+con la URL y el secreto en Vault. **No está aplicado**: apunta a una URL que todavía no existe, y
+un cron llamando al vacío solo llenaría el registro de fallos. Se aplica el día del despliegue.
+Falta también el correo: hoy el informe aparece en el portal, no llega a la bandeja del gerente.

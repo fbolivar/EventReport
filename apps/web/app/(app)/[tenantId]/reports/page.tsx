@@ -17,6 +17,19 @@ import { ReportDownload } from "./report-download";
 
 export const metadata: Metadata = { title: "Informes" };
 
+
+/**
+ * "Disponibles" son los que se pueden descargar. Contar los fallidos ahí
+ * anuncia informes que no existen; y no nombrarlos escondería que fallaron.
+ */
+function meta(reports: Array<{ status: string }>): string {
+  const ready = reports.filter((report) => report.status === "ready").length;
+  const failed = reports.filter((report) => report.status === "failed").length;
+  const parts = [`${ready} disponibles`];
+  if (failed > 0) parts.push(failed === 1 ? "1 fallido" : `${failed} fallidos`);
+  return parts.join(" · ");
+}
+
 export default async function ReportsPage({
   params,
 }: {
@@ -63,7 +76,10 @@ export default async function ReportsPage({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
         <Surface>
-          <SurfaceHeader title="Generados" meta={`${reports.length} disponibles`} />
+          <SurfaceHeader
+            title="Generados"
+            meta={meta(reports)}
+          />
           <SurfaceBody className="py-0">
             <ul className="divide-y divide-line">
               {reports.map((report) => (
