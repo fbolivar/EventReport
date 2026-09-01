@@ -686,3 +686,30 @@ portal decía "2 páginas" en un PDF de 3. Un dato que el usuario puede desmenti
 archivo. Ahora `countPages()` cuenta los objetos `/Type /Page` del PDF ya renderizado, una sola
 vez para todos los tipos. **Regla:** si el dato está en el artefacto, se lee del artefacto; no se
 estima.
+
+## Bloque 14 — Tablero multicliente (MSSP)
+
+La vista existía, pero con un solo tenant en la base no se podía juzgar. Lo primero fue crear un
+segundo cliente de demostración deliberadamente distinto —plan menor, un equipo, colector caído,
+eventos sin atender, postura peor— en `supabase/seed/demo-mssp.sql`. **Regla:** una vista que
+compara N cosas no se puede evaluar con N=1.
+
+Con dos clientes a la vista, el defecto de fondo quedó claro: **el tablero ordenaba por puntaje**,
+y el puntaje no dice qué hacer hoy. `attentionFor()` (`lib/mssp/attention.ts`, seis pruebas) da
+una frase por cliente y un orden por urgencia:
+
+1. **Colector caído.** Va antes que cualquier hallazgo: sin datos nuevos, el informe del mes sale
+   incompleto y nadie se entera hasta abrirlo. Ningún puntaje refleja eso.
+2. **Eventos críticos sin atender de más de siete días** —el umbral de OP-002—: ya ocurrieron.
+3. Hallazgos críticos abiertos, caída de postura mayor a cinco puntos, eventos recientes, colector
+   sin reportar, hallazgos altos.
+4. Y si no hay nada, lo dice: "Sin novedades: nada que hacer hoy". Una celda vacía se lee como
+   dato faltante.
+
+El delta del tablero comparaba contra el día anterior, así que un cliente que se deteriora despacio
+aparecía "sin cambio" todos los días. Ahora compara contra hace un mes, igual que `postureScore`
+en el portal. **Regla:** la misma cifra se calcula igual en todas las vistas, o el producto se
+contradice a sí mismo.
+
+Queda pendiente el informe "Comparativo de clientes" (§8, mensual para MSSP): el tablero responde
+"qué hago hoy", no "cómo va mi cartera este mes".

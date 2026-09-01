@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "node --test lib/reports/schedule.test.ts lib/supabase/tenant-scope.test.ts"
+    "test": "node --test lib/reports/schedule.test.ts lib/supabase/tenant-scope.test.ts lib/mssp/attention.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

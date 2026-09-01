@@ -14,6 +14,11 @@ export interface MsspRow {
   firewalls: number;
   collectorStatus: CollectorHealth["status"];
   lastReport?: string;
+  /** Eventos críticos sin atender y antigüedad del más viejo, en días. */
+  untreatedEvents: number;
+  oldestUntreatedDays?: number;
+  /** Última señal del colector: sin ella, todo lo demás está desactualizado. */
+  lastSeenAt?: string;
 }
 
 /**
@@ -24,11 +29,11 @@ export interface MsspRow {
 export const listMsspRows = cache(async (): Promise<MsspRow[]> => {
   const supabase = await createClient();
 
-  const [tenants, findings, firewalls, collectors, scores, reports] = await Promise.all([
+  const [tenants, findings, firewalls, collectors, scores, reports, events] = await Promise.all([
     supabase.from("tenants").select("id, slug, name, plan"),
     supabase.from("findings").select("tenant_id, severity, status").eq("status", "open"),
     supabase.from("firewalls").select("tenant_id"),
-    supabase.from("collectors").select("tenant_id, status"),
+    supabase.from("collectors").select("tenant_id, status, last_seen_at"),
     supabase
       .from("posture_scores")
       .select("tenant_id, computed_at, value")
@@ -39,6 +44,11 @@ export const listMsspRows = cache(async (): Promise<MsspRow[]> => {
       .select("tenant_id, generated_at")
       .not("generated_at", "is", null)
       .order("generated_at", { ascending: false }),
+    supabase
+      .from("critical_events")
+      .select("tenant_id, ts")
+      .is("acknowledged_at", null)
+      .order("ts", { ascending: true }),
   ]);
 
   const worstStatus = (statuses: CollectorHealth["status"][]): CollectorHealth["status"] => {
@@ -50,8 +60,18 @@ export const listMsspRows = cache(async (): Promise<MsspRow[]> => {
     const tenantScores = (scores.data ?? []).filter((row) => row.tenant_id === tenant.id);
     const latestAt = tenantScores[0]?.computed_at;
     const latest = tenantScores.filter((row) => row.computed_at === latestAt);
-    const previousAt = tenantScores.find((row) => row.computed_at !== latestAt)?.computed_at;
-    const previous = tenantScores.filter((row) => row.computed_at === previousAt);
+    // Contra hace un mes, igual que el portal (`postureScore`): comparado con
+    // ayer, un cliente que se deteriora despacio aparece "sin cambio" todos los
+    // días y nadie lo mira nunca.
+    const monthAgo = latestAt
+      ? new Date(new Date(latestAt).getTime() - 30 * 86_400_000).toISOString()
+      : undefined;
+    const previousAt = monthAgo
+      ? tenantScores.find((row) => row.computed_at <= monthAgo)?.computed_at
+      : undefined;
+    const previous = previousAt
+      ? tenantScores.filter((row) => row.computed_at === previousAt)
+      : [];
     const average = (values: number[]) =>
       values.length === 0
         ? 0
@@ -61,9 +81,16 @@ export const listMsspRows = cache(async (): Promise<MsspRow[]> => {
     const previousScore = average(previous.map((row) => row.value));
 
     const open = (findings.data ?? []).filter((row) => row.tenant_id === tenant.id);
-    const tenantCollectors = (collectors.data ?? [])
-      .filter((row) => row.tenant_id === tenant.id)
-      .map((row) => row.status);
+    const tenantCollectorRows = (collectors.data ?? []).filter((row) => row.tenant_id === tenant.id);
+    const tenantCollectors = tenantCollectorRows.map((row) => row.status);
+    const lastSeenAt = tenantCollectorRows
+      .map((row) => row.last_seen_at)
+      .filter((value) => value !== null)
+      .sort()
+      .at(-1);
+
+    const untreated = (events.data ?? []).filter((row) => row.tenant_id === tenant.id);
+    const oldest = untreated[0]?.ts;
 
     return {
       tenantId: tenant.slug,
@@ -77,6 +104,11 @@ export const listMsspRows = cache(async (): Promise<MsspRow[]> => {
       collectorStatus: worstStatus(tenantCollectors),
       lastReport:
         (reports.data ?? []).find((row) => row.tenant_id === tenant.id)?.generated_at ?? undefined,
+      untreatedEvents: untreated.length,
+      oldestUntreatedDays: oldest
+        ? Math.floor((Date.now() - Date.parse(oldest)) / 86_400_000)
+        : undefined,
+      lastSeenAt: lastSeenAt ?? undefined,
     };
   });
 });
