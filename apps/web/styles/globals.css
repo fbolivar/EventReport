@@ -1,0 +1,138 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+/**
+ * Tokens -> Tailwind utilities. Nothing here holds a literal value: every
+ * entry points at a token from tokens.css, so the whole aesthetic changes
+ * from one file.
+ */
+@theme inline {
+  --color-paper: var(--er-paper);
+  --color-mist: var(--er-mist);
+  --color-ink: var(--er-ink);
+  --color-ink-soft: var(--er-ink-soft);
+  --color-ink-raised: var(--er-ink-raised);
+  --color-ink-line: var(--er-ink-line);
+  --color-line: var(--er-line);
+  --color-on-ink: var(--er-on-ink);
+  --color-on-ink-soft: var(--er-on-ink-soft);
+  --color-signal: var(--er-signal);
+  --color-signal-hover: var(--er-signal-hover);
+
+  --color-critical: var(--er-sev-critical);
+  --color-high: var(--er-sev-high);
+  --color-medium: var(--er-sev-medium);
+  --color-low: var(--er-sev-low);
+  --color-resolved: var(--er-sev-resolved);
+
+  --color-critical-tint: var(--er-sev-critical-tint);
+  --color-high-tint: var(--er-sev-high-tint);
+  --color-medium-tint: var(--er-sev-medium-tint);
+  --color-low-tint: var(--er-sev-low-tint);
+  --color-resolved-tint: var(--er-sev-resolved-tint);
+
+  --color-critical-on-ink: var(--er-sev-critical-on-ink);
+  --color-high-on-ink: var(--er-sev-high-on-ink);
+  --color-medium-on-ink: var(--er-sev-medium-on-ink);
+  --color-low-on-ink: var(--er-sev-low-on-ink);
+  --color-resolved-on-ink: var(--er-sev-resolved-on-ink);
+
+  --font-sans: var(--er-font-sans);
+  --font-mono: var(--er-font-mono);
+
+  --text-display: var(--er-text-display);
+  --text-display--line-height: var(--er-text-display-lh);
+  --text-display--letter-spacing: var(--er-text-display-ls);
+  --text-display--font-weight: var(--er-weight-display);
+
+  --text-h1: var(--er-text-h1);
+  --text-h1--line-height: var(--er-text-h1-lh);
+  --text-h1--letter-spacing: var(--er-text-h1-ls);
+
+  --text-h2: var(--er-text-h2);
+  --text-h2--line-height: var(--er-text-h2-lh);
+  --text-h2--letter-spacing: var(--er-text-h2-ls);
+
+  --text-h3: var(--er-text-h3);
+  --text-h3--line-height: var(--er-text-h3-lh);
+  --text-h3--letter-spacing: var(--er-text-h3-ls);
+
+  --text-body: var(--er-text-body);
+  --text-body--line-height: var(--er-text-body-lh);
+
+  --text-small: var(--er-text-small);
+  --text-small--line-height: var(--er-text-small-lh);
+
+  --text-micro: var(--er-text-micro);
+  --text-micro--line-height: var(--er-text-micro-lh);
+  --text-micro--letter-spacing: var(--er-text-micro-ls);
+
+  --radius-control: var(--er-radius-control);
+  --radius-surface: var(--er-radius-surface);
+
+  --shadow-hover: var(--er-shadow-hover);
+  --shadow-pop: var(--er-shadow-pop);
+
+  --container-marketing: var(--er-width-marketing);
+  --container-app: var(--er-width-app);
+  --container-prose: var(--er-width-prose);
+
+  --ease-er: var(--er-ease);
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    border-color: var(--er-line);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--er-paper);
+    color: var(--er-ink);
+    font-family: var(--er-font-sans);
+    font-size: var(--er-text-body);
+    line-height: var(--er-text-body-lh);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Figures never shift column width. */
+  table,
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: none;
+    box-shadow: var(--er-focus-ring);
+    border-radius: var(--er-radius-control);
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--er-signal) 18%, #ffffff);
+  }
+}
+
+@layer utilities {
+  /* Literal values read from the firewall: IPs, rule ids, hashes, log lines. */
+  .value {
+    font-family: var(--er-font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

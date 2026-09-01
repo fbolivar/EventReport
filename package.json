@@ -1,0 +1,18 @@
+{
+  "name": "eventreport",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Informes ejecutivos, tecnicos y de cumplimiento a partir del firewall de una PYME",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "dev": "pnpm --filter @eventreport/web dev",
+    "build": "pnpm --filter @eventreport/web build",
+    "start": "pnpm --filter @eventreport/web start",
+    "lint": "pnpm --filter @eventreport/web lint",
+    "typecheck": "pnpm -r typecheck",
+    "check": "pnpm lint && pnpm typecheck && pnpm build"
+  }
+}

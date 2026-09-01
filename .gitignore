@@ -1,0 +1,39 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# next
+.next/
+out/
+next-env.d.ts
+
+# production
+build/
+dist/
+
+# env
+.env
+.env.local
+.env*.local
+
+# supabase
+supabase/.temp/
+supabase/.branches/
+
+# go
+collector/bin/
+*.exe
+
+# misc
+.DS_Store
+*.pem
+*.tsbuildinfo
+.vercel
+.turbo
+coverage/
+
+# saas factory template (no forma parte de EventReport)
+.claude/
+
+# playwright mcp scratch
+.playwright-mcp/
