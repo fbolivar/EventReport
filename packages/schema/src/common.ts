@@ -25,20 +25,6 @@ export const BRANDS = [
 
 export type Brand = (typeof BRANDS)[number];
 
-/** Human label per brand, used across portal, landing and reports. */
-export const BRAND_LABELS: Record<Brand, string> = {
-  fortigate: "Fortinet FortiGate",
-  sophos_xg: "Sophos XG/XGS",
-  sonicwall: "SonicWall",
-  mikrotik: "MikroTik RouterOS 7",
-  panos: "Palo Alto PAN-OS",
-  pfsense: "pfSense / OPNsense",
-  watchguard: "WatchGuard Firebox",
-  cisco_asa: "Cisco ASA / FTD",
-  checkpoint: "Check Point",
-  generic: "Genérico (configuración manual)",
-};
-
 /**
  * What an adapter can fill in. Drives which rules are evaluable and, by
  * transitivity, which controls can be assessed (section 15.4).

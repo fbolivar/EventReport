@@ -240,3 +240,35 @@ ilustración.
   Tailwind con `@theme inline`. Ningún valor literal vive fuera de `tokens.css`.
 - Utilidad `.value` para todo dato literal del firewall: aplica la mono y las cifras tabulares.
   Es el principio 3 hecho una sola clase.
+
+### Bloque 2 — sistema de diseño y `/styleguide` (2026-08-31)
+
+- `/styleguide` vive en el grupo `(dev)` y devuelve 404 en producción. Es mesa de trabajo, no
+  página del producto.
+- **Las etiquetas en español salieron de `packages/schema`.** El paquete viaja al colector en Go;
+  solo lleva códigos. Todo el texto visible está en `content/labels.ts`, así que renombrar un
+  estado no toca el contrato ni ningún componente.
+- Los componentes de informe (`PostureScore`, `TrendChart`, `SeverityBreakdown`, `FindingCard`,
+  `ControlMatrix`, `ScopeNote`, `CollectorStatus`) son servidor puro y sin dependencias de
+  gráficas: `TrendChart` es SVG en línea. Así el mismo componente sirve al portal, a la landing
+  y al PDF, que era el principio 1.
+- `EmptyState` / `ErrorState` reciben la acción como `ReactNode`, no como `onClick`. Con un
+  manejador tendrían que ser componentes de cliente y arrastrarían al portal entero; así el
+  llamador decide si es enlace o botón.
+- Severidad con punto sólido además del color: la guía incluye el mismo bloque en escala de
+  grises como prueba de que la información sobrevive sin color.
+- `components/ui/` sigue vacío a propósito. shadcn/ui entra cuando haga falta una primitiva con
+  comportamiento real (drawer, tabs, select del portal); lo que existe hoy es tipografía y color,
+  y eso no necesita una dependencia.
+
+#### Auto-blindaje: `tailwind-merge` borraba colores de texto
+
+`cn()` usaba `twMerge` con la configuración por defecto. Como nuestra escala tipográfica
+(`text-small`, `text-micro`, `text-h3`…) no existe en Tailwind, `tailwind-merge` la leía como
+color de texto, la consideraba en conflicto con `text-paper` y **eliminaba una de las dos**. El
+botón primario quedó con texto tinta sobre azul y el botón sobre tinta quedó invisible.
+
+Se detectó en `/styleguide` comparando el `className` renderizado contra el escrito, no a ojo.
+Arreglo: `extendTailwindMerge` declarando la escala en el grupo `font-size`
+(`lib/utils/cn.ts`). **Regla:** cada paso nuevo de tipografía en `tokens.css` se agrega también
+a esa lista, o los colores de texto vuelven a desaparecer en silencio.

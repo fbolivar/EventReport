@@ -22,12 +22,6 @@ export interface Plan {
 
 export type MemberRole = "mssp_admin" | "client_admin" | "client_viewer";
 
-export const MEMBER_ROLE_LABELS: Record<MemberRole, string> = {
-  mssp_admin: "Administrador MSSP",
-  client_admin: "Administrador",
-  client_viewer: "Lectura",
-};
-
 export interface Tenant {
   id: string;
   name: string;
@@ -84,17 +78,6 @@ export const REPORT_TYPES = [
 ] as const;
 
 export type ReportType = (typeof REPORT_TYPES)[number];
-
-export const REPORT_TYPE_LABELS: Record<ReportType, string> = {
-  executive: "Ejecutivo de postura",
-  hardening: "Hardening del firewall",
-  activity: "Actividad de red",
-  threats: "Amenazas",
-  changes: "Cambios de configuración",
-  compliance: "Cumplimiento",
-  critical_events: "Eventos críticos",
-  baseline: "Línea base",
-};
 
 export interface Report {
   id: string;

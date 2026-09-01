@@ -17,17 +17,6 @@ export const EVENT_TYPES = [
 
 export type EventType = (typeof EVENT_TYPES)[number];
 
-export const EVENT_TYPE_LABELS: Record<EventType, string> = {
-  traffic: "Tráfico",
-  ips: "IPS",
-  av: "Antivirus",
-  web: "Filtrado web",
-  app: "Control de aplicaciones",
-  vpn: "VPN",
-  admin: "Administración",
-  system: "Sistema",
-};
-
 export type EventAction = "allow" | "deny" | "block" | "alert";
 
 export interface FirewallEvent {
@@ -77,18 +66,6 @@ export const TOPN_DIMENSIONS = [
 ] as const;
 
 export type TopNDimension = (typeof TOPN_DIMENSIONS)[number];
-
-export const TOPN_DIMENSION_LABELS: Record<TopNDimension, string> = {
-  src_country: "Países de origen",
-  src_ip_denied: "IP de origen denegadas",
-  dst_ip: "Destinos",
-  dst_port: "Puertos destino",
-  app: "Aplicaciones",
-  web_category: "Categorías web",
-  vpn_user: "Usuarios VPN",
-  ips_signature: "Firmas IPS",
-  policy: "Políticas por volumen",
-};
 
 /** One row of `rollups_topn`. */
 export interface TopNRollup {
