@@ -1,0 +1,13 @@
+{
+  "$schema": "https://deno.land/x/deno/cli/schemas/config-file.v1.json",
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@^2.58.0"
+  },
+  "nodeModulesDir": "none",
+  "lock": false,
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true
+  },
+  "exclude": ["_shared/generated/README.md"]
+}

@@ -1,6 +1,7 @@
-import type { ComplianceAssessment, Control } from "@eventreport/schema";
+import type { ComplianceAssessment, Control, FrameworkCode } from "@eventreport/schema";
 
 import { ControlStatus } from "@/components/app/compliance/control-status";
+import { ScopeDecision } from "@/components/app/compliance/scope-decision";
 import { Value } from "@/components/shared/value";
 import { cn } from "@/lib/utils/cn";
 
@@ -13,11 +14,14 @@ export function ControlMatrix({
   assessments,
   className,
   compact = false,
+  tenantId,
 }: {
   controls: Control[];
   assessments: ComplianceAssessment[];
   className?: string;
   compact?: boolean;
+  /** When present, each control can be declared out of scope (§15.5). */
+  tenantId?: string;
 }) {
   const byCode = new Map(assessments.map((item) => [item.controlCode, item]));
 
@@ -62,6 +66,16 @@ export function ControlMatrix({
               )}
               <td className="py-3 text-right">
                 {assessment ? <ControlStatus status={assessment.status} /> : null}
+                {tenantId && assessment ? (
+                  <div className="mt-1 flex justify-end">
+                    <ScopeDecision
+                      tenantId={tenantId}
+                      framework={control.frameworkCode as FrameworkCode}
+                      control={control.code}
+                      status={assessment.status}
+                    />
+                  </div>
+                ) : null}
               </td>
             </tr>
           );

@@ -2,7 +2,7 @@
  * Normalized event and hourly aggregates (docs/diseno-tecnico.md sections 4.2 and 6.2).
  * Raw syslog lines never leave the collector; only these aggregates travel.
  */
-import type { Severity, Timestamp } from "./common";
+import type { Severity, Timestamp } from "./common.ts";
 
 export const EVENT_TYPES = [
   "traffic",

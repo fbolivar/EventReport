@@ -4,7 +4,6 @@ import { FindingCard } from "@/components/app/findings/finding-card";
 import { PostureScore } from "@/components/app/report/posture-score";
 import { SeverityBreakdown } from "@/components/app/report/severity-breakdown";
 import { PageHeader } from "@/components/app/shell/page-header";
-import { Button, ButtonLink } from "@/components/shared/button";
 import { Skeleton } from "@/components/shared/states";
 import { Surface, SurfaceBody, SurfaceHeader } from "@/components/shared/surface";
 import { Value } from "@/components/shared/value";
@@ -13,8 +12,23 @@ import { countsBySeverity, listFindings, remediationFor, rulesByCode } from "@/l
 import { listReports, postureScore } from "@/lib/data/posture";
 import { getTenant, listFirewalls } from "@/lib/data/tenant";
 import { formatDate } from "@/lib/utils/format";
+import { GenerateReportButton } from "./generate-button";
+import { ReportDownload } from "./report-download";
 
 export const metadata: Metadata = { title: "Informes" };
+
+
+/**
+ * "Disponibles" son los que se pueden descargar. Contar los fallidos ahí
+ * anuncia informes que no existen; y no nombrarlos escondería que fallaron.
+ */
+function meta(reports: Array<{ status: string }>): string {
+  const ready = reports.filter((report) => report.status === "ready").length;
+  const failed = reports.filter((report) => report.status === "failed").length;
+  const parts = [`${ready} disponibles`];
+  if (failed > 0) parts.push(failed === 1 ? "1 fallido" : `${failed} fallidos`);
+  return parts.join(" · ");
+}
 
 export default async function ReportsPage({
   params,
@@ -47,12 +61,25 @@ export default async function ReportsPage({
       <PageHeader
         title="Informes"
         meta="Se generan solos según tu plan; también puedes pedirlos cuando quieras."
-        action={<Button>Generar informe</Button>}
+        action={
+          <div className="flex flex-wrap items-center gap-3">
+            <GenerateReportButton
+              tenantId={tenantId}
+              type="hardening"
+              label="Hardening"
+              variant="secondary"
+            />
+            <GenerateReportButton tenantId={tenantId} label="Ejecutivo" />
+          </div>
+        }
       />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
         <Surface>
-          <SurfaceHeader title="Generados" meta={`${reports.length} disponibles`} />
+          <SurfaceHeader
+            title="Generados"
+            meta={meta(reports)}
+          />
           <SurfaceBody className="py-0">
             <ul className="divide-y divide-line">
               {reports.map((report) => (
@@ -75,14 +102,10 @@ export default async function ReportsPage({
                         <Value>{report.pages}</Value> páginas ·{" "}
                         <Value>{report.sizeKb}</Value> KB
                       </span>
-                      <ButtonLink
-                        href={`/${tenantId}/reports`}
-                        variant="secondary"
-                        size="sm"
-                      >
-                        Descargar PDF
-                      </ButtonLink>
+                      <ReportDownload reportId={report.id} />
                     </>
+                  ) : report.status === "failed" ? (
+                    <span className="text-micro text-critical">no se pudo generar</span>
                   ) : (
                     <span className="flex items-center gap-2 text-micro text-ink-soft">
                       <Skeleton className="h-2 w-24" /> generándose

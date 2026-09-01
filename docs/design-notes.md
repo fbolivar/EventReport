@@ -322,6 +322,70 @@ ilustración.
   `tenant_member_profiles()`, SECURITY DEFINER con el filtro de membresía **dentro** de la
   función: nadie puede pedir los miembros de un tenant ajeno.
 
+### Bloque 6 — motor de reglas (2026-09-01)
+
+- **`packages/rules` es código puro y probado**: 15 pruebas con `node --test`, sin base de datos y
+  sin red. Cada prueba parte de una configuración limpia y rompe **una sola cosa**, así que un
+  fallo señala una regla, no un sistema.
+- **`evaluate()` y `reconcile()` están separadas a propósito.** La primera dice qué es verdad del
+  equipo ahora; la segunda convierte eso en ciclo de vida contra lo que la base ya tenía: lo que
+  persiste conserva su `first_seen`, lo que desaparece **se resuelve, no se borra**, y un hallazgo
+  que el cliente aceptó como riesgo sigue aceptado — el motor no pisa una decisión humana.
+- **Una regla que la marca no puede evaluar no es un aprobado.** `requires(capabilities)` la marca
+  `evaluable: false` y el informe de cumplimiento lo declara, en vez de darla por correcta.
+- **El instante de evaluación se inyecta** (`now`), no se lee del reloj: sin eso las reglas con
+  ventana temporal (FW-007, FW-013, FW-016, OP-001) no serían reproducibles en pruebas.
+- El motor corre en la Edge Function `ingest-config`, que es donde un snapshot se vuelve informe:
+  guarda la configuración, evalúa, reconcilia y recalcula el score.
+- `supabase/functions/build-shared.mjs` copia `packages/schema` y `packages/rules` dentro de la
+  función. Las Edge Functions corren en Deno y se despliegan solas: no pueden resolver un workspace
+  de pnpm. Copiar es mejor que duplicar, porque la copia se genera y nunca se edita: el motor que
+  corre en la nube es el mismo byte a byte que cubren las pruebas.
+
+### Bloque 7 — colector en Go, fase 1 (2026-09-01)
+
+- **Sin dependencias externas**: solo biblioteca estándar. El colector se instala en la máquina
+  de un cliente que no controlamos; cada dependencia es una superficie más que auditar y una
+  actualización más que empujar. PBKDF2 y Ed25519 ya vienen en Go 1.24+.
+- **La línea cruda se escribe en la bóveda antes de parsearla.** Un formato que el adaptador no
+  reconoce no se pierde: queda en disco y se cuenta como calidad del dato.
+- **La cola es finita a propósito** (50.000 líneas): quedarse atrás no puede convertirse en
+  memoria creciente en una máquina del cliente. `push` nunca bloquea, y lo descartado se cuenta.
+- El adaptador es la **única** pieza que menciona una marca. Si agregar un fabricante obligara a
+  tocar el agregador, las reglas o el portal, el modelo normalizado estaría mal (§12, fase 4).
+- 8 paquetes con pruebas, incluida una de punta a punta que levanta el receptor, envía syslog real
+  por UDP y comprueba que lo que queda listo para subir es el agregado **y que ninguna línea cruda
+  aparece en él**.
+
+#### Auto-blindaje: la prueba de punta a punta encontró una desviación del diseño
+
+El agregador agrupaba por la marca de tiempo del equipo. El §6.6 dice agrupar **por hora de
+recepción**, y con razón: un firewall con el reloj corrido reparte su tráfico entre horas que
+nunca cierran, y el informe muestra huecos que no existen. Se detectó porque la prueba de punta a
+punta mezcló líneas con fecha del equipo (10:15) recibidas a la hora real, y el conteo de líneas
+no reconocidas quedó en otra hora.
+
+Corregido: se agrupa por recepción y la diferencia entre relojes viaja como desfase, que es
+justamente lo que mira FW-015. Una prueba nueva lo fija.
+
+#### Auto-blindaje: un archivo a medio escribir no puede parecer un envío pendiente
+
+El buffer nombra los archivos temporales con punto inicial y los renombra al terminar, pero
+`List()` filtraba solo por extensión: un `.tmp` interrumpido seguía terminando en `.json` y
+aparecía como pendiente, listo para subirse a medias. Lo encontró la prueba que simula un corte
+de energía a mitad de escritura.
+
+#### Auto-blindaje: un score que toca fondo deja de informar
+
+La primera fórmula restaba una penalización lineal (`peso / superficie`). Al probarla contra un
+firewall real y roto —administración en la WAN, política any→any, escritorio remoto publicado— dio
+**configuración 0**. Un score en cero no distingue entre malo y catastrófico, y sobre todo no
+permite mostrar mejora: el cliente arregla dos cosas y sigue viendo 0.
+
+Se cambió por una penalización saturante (`peso / (peso + superficie)`), que nunca llega a cero y
+sigue siendo monótona. El mismo firewall pasó de 0 a 24 en configuración, y de 24 a 41 en total.
+Se detectó ejecutando el motor contra la función desplegada, no leyendo el código.
+
 #### Auto-blindaje: un usuario creado por SQL rompe el login
 
 Insertar en `auth.users` deja en NULL columnas que GoTrue lee como cadenas no nulas
@@ -355,3 +419,165 @@ Se detectó en `/styleguide` comparando el `className` renderizado contra el esc
 Arreglo: `extendTailwindMerge` declarando la escala en el grupo `font-size`
 (`lib/utils/cn.ts`). **Regla:** cada paso nuevo de tipografía en `tokens.css` se agrega también
 a esa lista, o los colores de texto vuelven a desaparecer en silencio.
+
+---
+
+## Bloque 8 — Motor de informes
+
+El informe es el producto: es lo que el gerente recibe por correo y lo que el auditor archiva.
+Por eso la redacción no se improvisa en la plantilla del PDF.
+
+- `lib/reports/input.ts` arma un `ReportInput` con **todas** las cifras ya calculadas por
+  nosotros: postura, delta, hallazgos por severidad, actividad y cobertura por marco.
+- `lib/reports/sections.ts` le pide a `claude-opus-5` únicamente la prosa, con
+  `output_config` de `json_schema` para que la respuesta tenga forma fija, `thinking` adaptativo
+  y el bloque de sistema cacheado (es idéntico en todos los informes; los datos no).
+  El sistema prohíbe inventar cifras, y el modelo no tiene de dónde sacarlas: solo ve el input.
+- Sin `ANTHROPIC_API_KEY`, `templateSections()` redacta lo mismo de forma determinista. Un
+  informe con prosa más plana es mejor que un informe que no llega, y hace el flujo probable
+  sin red.
+- El PDF (`lib/reports/pdf.tsx`) repite los hex de la paleta porque `@react-pdf/renderer` no lee
+  variables CSS. El archivo lo dice en un comentario: si cambia `tokens.css`, hay que replicar.
+- La descarga (`app/api/reports/[reportId]/route.ts`) busca la fila por RLS y firma una URL de
+  300 s contra el bucket privado `reports`. **Regla:** al no existir un chequeo de autorización
+  aparte, no hay uno que olvidar; el bucket nunca se vuelve público.
+
+## Bloque 9 — Decisiones del cliente
+
+Tres acciones que faltaban para que el portal no fuera solo de lectura, todas auditadas:
+
+- **Aceptar un riesgo** exige justificación de 15 caracteres como mínimo y queda en el
+  historial; `ingest-config` no reabre un hallazgo `accepted`, así que el cliente no pelea con
+  el producto en cada snapshot.
+- **Marcar un evento como atendido** mueve la regla OP-002, que cuenta eventos críticos sin
+  atender de más de siete días. El botón no es cosmético.
+- **Declarar un control fuera de alcance** exige justificación, y la restricción
+  `compliance_not_applicable_needs_reason` la exige también en la base: un control no puede
+  quedar fuera de alcance sin motivo aunque un llamador futuro olvide pedirlo. El resumen del
+  marco resta ese control de los evaluables en la misma recarga.
+- **Invitar personas** sin `service_role`: la invitación es una fila, y un trigger
+  `after insert on auth.users` la convierte en membresía cuando esa persona se registra. Las
+  invitaciones pendientes se listan junto a las personas; una invitación que no se ve no se
+  puede recordar ni cancelar.
+
+#### Auto-blindaje: `.next` compartido entre `dev` y `build` (reincidencia)
+
+Volvió a aparecer `Cannot find module './vendor-chunks/...'` al abrir el portal: un `pnpm dev`
+anterior seguía vivo mientras se corría `pnpm build`. La regla ya estaba escrita en `CLAUDE.md`;
+lo que faltaba era comprobarla. **Regla:** antes de `build`, matar lo que escuche en el puerto
+3000 (`Get-NetTCPConnection -LocalPort 3000`), no solo el proceso que uno recuerda haber
+lanzado; después de `build`, borrar `apps/web/.next` antes de volver a `dev`.
+
+#### Verificación de este bloque
+
+Con datos reales en Supabase: evento atendido (4 botones → 3), riesgo aceptado con
+justificación y reabierto, control 5.25 fuera de alcance (8 cumplen → 7, 1 fuera de alcance),
+invitación registrada y visible como pendiente, informe generado (2 páginas, 7 KB) y descargado
+como `application/pdf` con cabecera `%PDF-1.3`. `scrollWidth === clientWidth` a 390, 820 y 1440.
+El estado del seed se restauró después de probar.
+
+## Bloque 10 — Entrega del informe
+
+Dos cambios, uno de comportamiento y otro de contenido.
+
+**El trabajo sale del clic.** `requestReport` inserta la fila en `generating`, responde y sigue
+en `after()` de `next/server`. Generar tardaba 117 s con el botón bloqueado; ahora responde en
+1,7 s y el estado se ve en la lista. El precio es que el usuario tiene que volver: por eso la
+fila existe desde el primer instante y cualquier fallo la marca `failed`, nunca la deja colgada
+en "Generando…". **Regla:** al desplegar en Vercel hay que fijar `maxDuration` en la ruta; una
+función que muere a los 60 s deja informes a medio hacer.
+
+**El informe de hardening existe.** Antes el botón de la página de hallazgos era un enlace a
+`/reports` que no generaba nada: prometía un informe que no había. Ahora `buildHardeningInput` +
+`HardeningReport` producen el PDF con todos los hallazgos abiertos, su evidencia y los pasos de
+la marca. Aquí **no interviene el modelo**: los pasos vienen del catálogo tal como están escritos,
+porque un procedimiento que cambia de redacción entre dos informes no se puede auditar ni seguir.
+
+#### El catálogo de remediación estaba casi vacío
+
+De los 12 hallazgos abiertos, solo 4 tenían pasos: el PDF decía "todavía no tenemos los pasos de
+esta marca" en 8 de 12. El informe se veía bien y no servía para nada. Se completaron las 24
+reglas × 2 marcas (48 entradas, `20260901160000_remediation_catalog.sql`). **Pendiente de
+validación:** las rutas de menú son de FortiOS 7.x y Sophos XG v20 y hay que contrastarlas contra
+el firmware exacto antes de vender el informe; el hallazgo y la evidencia son correctos aunque la
+ruta cambie de nombre entre versiones.
+
+#### Auto-blindaje: el PDF cambiaba caracteres en silencio
+
+La evidencia "any → any" se imprimía como "any ’ any". `@react-pdf/renderer` usa Helvetica con
+codificación WinAnsi; un carácter fuera de esa tabla no falla, se sustituye por otro glifo. Es el
+peor tipo de error en un documento de evidencia: el PDF se ve bien y dice algo distinto de lo que
+el firewall tiene configurado.
+
+Se detectó descomprimiendo los flujos del PDF y leyendo los bytes reales, no mirando el
+documento. Arreglo: `pdfText()` en `lib/reports/pdf-theme.ts` traduce los símbolos conocidos
+(→ ⇒ ≥ ✓…) y reemplaza por guion lo que WinAnsi no puede dibujar. **Regla:** todo texto que
+venga de datos —evidencia, títulos, pasos, prosa del modelo— pasa por `pdfText()` antes de
+entrar en un `<Text>`. Si algún día se registra una fuente con Unicode completo, la función
+puede volverse identidad, pero no desaparecer.
+
+## Bloque 11 — Cumplimiento y entrega automática
+
+**El informe de cumplimiento** (§8, trimestral) es el documento que el auditor archiva: por cada
+control evaluable desde el firewall, su estado y la evidencia literal que lo sostiene. Tampoco
+interviene el modelo: si se regenera mañana tiene que decir exactamente lo mismo, o deja de ser
+evidencia.
+
+La portada empieza por el alcance, no por el resultado: "de los 93 controles del marco, 13 se
+pueden evaluar desde el firewall; los 80 restantes dependen de personas y procesos que este
+producto no observa". Un informe de cumplimiento que abre con lo que cumple y esconde su alcance
+en una nota al pie engaña al que lo lee. Los controles `not_assessable` se cuentan en la portada
+pero no se listan: veinte páginas de "no aplica a este producto" tapan lo que sí evaluamos.
+
+Se corrigió una contradicción aparente: un control que **cumple** se sostiene sobre hallazgos
+**cerrados**, y el PDF los mostraba con su severidad en rojo sin decir que estaban resueltos.
+Ahora cada evidencia dice su estado y su fecha.
+
+**La entrega automática.** `dueReports()` es una función pura —seis pruebas— que decide qué le
+toca a cada cliente según el plan (§10): ejecutivo mensual en básico, + hardening en estándar, +
+cumplimiento trimestral por marco en premium. Los períodos son **cerrados**: el mes pasado, el
+trimestre pasado. Un informe mensual emitido a mitad de mes no se puede comparar con el
+siguiente.
+
+`/api/cron/reports` decide y encarga; `/api/cron/render` renderiza **uno** por petición. La
+separación no es estética:
+
+- La memoización de la capa de datos (`cache()` de React) vive dentro de una petición. Un solo
+  request recorriendo varios tenants leería, en el segundo, los datos memoizados del primero:
+  un informe con datos de otra empresa. **Regla:** la generación programada procesa un tenant por
+  petición, siempre.
+- Cada PDF tarda hasta un minuto; repartidos, ninguno se acerca al límite de la función.
+
+#### El generador no tiene sesión, y RLS necesita una
+
+Es el problema de fondo del bloque. El portal se apoya en RLS para separar clientes y la capa de
+datos no filtra por tenant a mano —a propósito—. La generación automática no tiene usuario, así
+que corre con la clave de servicio, que **ignora RLS por completo**: usada tal cual, cada consulta
+del generador devolvería las filas de todos los clientes.
+
+Solución: `tenantScoped()` (`lib/supabase/tenant-scope.ts`) es un proxy que añade
+`.eq("tenant_id", …)` a cada `select`. El filtro deja de ser algo que alguien pueda olvidar y pasa
+a ser parte del cliente; `runAsTenant()` lo instala en un `AsyncLocalStorage` que `createClient()`
+consulta, así que la capa de datos funciona sin tocar una sola consulta. Las tablas de catálogo se
+declaran una por una y `tenants` se filtra por `id`, no por `tenant_id` —lo aprendimos fallando—.
+
+Ese proxy es lo único que separa a un cliente de otro en el camino programado, así que tiene
+pruebas propias (`tenant-scope.test.ts`, 5). **Regla:** la clave de servicio solo se usa a través
+de `runAsTenant`; nunca directamente para leer datos de un tenant.
+
+#### Auto-blindaje: un render muerto bloquea el informe para siempre
+
+El despacho cuenta un informe en `generating` como hecho, para no duplicarlo. Si el render muere
+—proceso caído, función sin tiempo—, esa fila se queda así y **ese informe no se vuelve a intentar
+nunca**. Apareció al reiniciar el servidor a mitad de una generación. Ahora el despacho marca como
+`failed` lo que lleve más de 30 minutos generando, antes de decidir qué falta.
+
+En la misma línea: la lista decía "17 disponibles" contando uno fallido. Un informe fallido no
+está disponible, y tampoco se puede esconder: ahora dice "16 disponibles · 1 fallido".
+
+#### Lo que falta para que esto entregue de verdad
+
+`supabase/scheduled-reports.sql` deja escrito el `pg_cron` que dispara el mes 1 a las 06:00 UTC,
+con la URL y el secreto en Vault. **No está aplicado**: apunta a una URL que todavía no existe, y
+un cron llamando al vacío solo llenaría el registro de fallos. Se aplica el día del despliegue.
+Falta también el correo: hoy el informe aparece en el portal, no llega a la bandeja del gerente.

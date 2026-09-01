@@ -3,8 +3,8 @@
  * The product never claims "cumple ISO 27001": it reports how many controls are
  * assessable from the firewall and the state of each one.
  */
-import type { Brand, Timestamp } from "./common";
-import type { RuleCode } from "./findings";
+import type { Brand, Timestamp } from "./common.ts";
+import type { RuleCode } from "./findings.ts";
 
 export const FRAMEWORKS = ["iso27001", "cis_v8", "pci_dss", "hipaa"] as const;
 

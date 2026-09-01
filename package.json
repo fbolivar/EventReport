@@ -13,6 +13,10 @@
     "start": "pnpm --filter @eventreport/web start",
     "lint": "pnpm --filter @eventreport/web lint",
     "typecheck": "pnpm -r typecheck",
-    "check": "pnpm lint && pnpm typecheck && pnpm build"
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "deno": "^2.9.6"
   }
 }

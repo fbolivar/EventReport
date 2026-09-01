@@ -38,8 +38,12 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
   const isAuthRoute = pathname.startsWith("/login");
+  // El cron no es una persona: se autentica con un secreto compartido dentro de
+  // la propia ruta, y mandarlo a /login solo lo dejaría sin poder trabajar.
+  const isCron = pathname.startsWith("/api/cron");
   // La landing y la guía de estilo son públicas; el portal no.
-  const isPublic = pathname === "/" || pathname.startsWith("/styleguide") || isAuthRoute;
+  const isPublic =
+    pathname === "/" || pathname.startsWith("/styleguide") || isAuthRoute || isCron;
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
