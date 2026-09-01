@@ -1150,3 +1150,22 @@ diseñar la tabla es la que permite este cambio sin tocarla.
 **Regla:** "es por diseño" no es respuesta cuando el diseño se pensó para el informe mensual y el
 usuario está mirando la pantalla el primer día. Lo que cuesta es lo mismo; lo que cambia es
 cuándo se ve.
+
+#### Retirar un colector dejaba una identidad muerta en el disco
+
+El operador retiró el colector desde el portal, volvió a bajar el instalador y el colector
+"no hacía nada": arrancaba, decía que medía, y cada envío se rechazaba en silencio. La causa: el
+archivo local seguía con el identificador del colector borrado, y `setup` respetaba la
+configuración existente sin comprobar que siguiera valiendo.
+
+Ahora, antes de respetar una configuración previa, el colector pregunta si el portal todavía lo
+reconoce. Si le responden 401 o 403 —y solo entonces— se vuelve a registrar con el token del
+instalador. **Un problema de red no cuenta**: quedarse sin internet un minuto no puede borrar el
+registro de un colector que funciona.
+
+Reproducido con el identificador muerto real antes de arreglarlo, y verificado después:
+`el registro anterior ya no vale; se vuelve a registrar este equipo`.
+
+**Regla:** un identificador guardado en disco es una suposición sobre el estado del servidor.
+Antes de construir encima, se comprueba — y el fallo se distingue de la falta de red, porque
+tratarlos igual borra lo que funciona.

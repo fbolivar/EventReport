@@ -247,12 +247,28 @@ func runSetup(args []string, logger *slog.Logger) error {
 
 	// Enrolar es idempotente desde fuera: si ya hay configuración, se respeta.
 	// Un doble clic de más no puede dejar al cliente con dos colectores.
-	if _, err := config.Load(*path); err != nil {
+	//
+	// Pero una configuración vieja puede apuntar a un colector que ya no existe
+	// —alguien lo retiró desde el portal—, y entonces todo lo que el colector
+	// firma se rechaza en silencio: arranca, dice que mide y no llega un dato.
+	// Antes de respetarla, se comprueba que la identidad siga siendo válida.
+	existing, err := config.Load(*path)
+	switch {
+	case err != nil:
 		if *token == "" || *baseURL == "" {
 			return fmt.Errorf("este colector no está registrado: falta -token y -url")
 		}
-		enrollArgs := []string{"-token", *token, "-url", *baseURL, "-config", *path}
-		if err := runEnroll(enrollArgs, logger); err != nil {
+		if err := runEnroll([]string{"-token", *token, "-url", *baseURL, "-config", *path}, logger); err != nil {
+			return err
+		}
+
+	case !identityAccepted(existing):
+		if *token == "" || *baseURL == "" {
+			return fmt.Errorf("este colector ya no está registrado en el portal: emite un token nuevo")
+		}
+		logger.Warn("el registro anterior ya no vale; se vuelve a registrar este equipo",
+			"colector", existing.CollectorID)
+		if err := runEnroll([]string{"-token", *token, "-url", *baseURL, "-config", *path}, logger); err != nil {
 			return err
 		}
 	}
@@ -306,6 +322,36 @@ func runSetup(args []string, logger *slog.Logger) error {
 	}()
 
 	return setup.Serve(ctx, *addr, device, logger)
+}
+
+// identityAccepted comprueba que el portal siga reconociendo a este colector.
+//
+// Solo devuelve falso cuando la nube **rechaza** la identidad (401/403). Un
+// problema de red devuelve verdadero: quedarse sin internet un minuto no puede
+// borrar el registro de un colector que funciona.
+func identityAccepted(file *config.File) bool {
+	if file.CollectorID == "" || file.BaseURL == "" {
+		return false
+	}
+
+	key, err := file.SigningKey()
+	if err != nil {
+		return false
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	client := transport.New(file.BaseURL, file.CollectorID, key)
+	response, err := client.Post(ctx, "heartbeat", map[string]any{
+		"version": version, "eps": 0, "droppedPct": 0.0,
+		"queueDepth": 0, "diskFreeGb": 0, "clockSkewSeconds": 0,
+	})
+	if err != nil {
+		return true
+	}
+
+	return response.Status != http.StatusUnauthorized && response.Status != http.StatusForbidden
 }
 
 // collectorDevice conecta el asistente con lo que el colector ya sabe hacer.
