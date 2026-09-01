@@ -79,7 +79,7 @@ export default async function CompliancePage({
               note={framework?.scopeNote ?? ""}
             />
           ) : null}
-          <ControlMatrix controls={controls} assessments={assessments} />
+          <ControlMatrix controls={controls} assessments={assessments} tenantId={tenantId} />
         </SurfaceBody>
       </Surface>
 

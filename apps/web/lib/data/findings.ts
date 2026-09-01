@@ -40,7 +40,7 @@ export const listFindings = cache(async (): Promise<Finding[]> => {
   const { data } = await supabase
     .from("findings")
     .select(
-      "id, firewall_id, rule_code, asset_key, asset_label, status, severity, first_seen, last_seen, resolved_at, evidence",
+      "id, firewall_id, rule_code, asset_key, asset_label, status, severity, first_seen, last_seen, resolved_at, evidence, justification",
     )
     .order("severity")
     .order("last_seen", { ascending: false });
@@ -57,6 +57,7 @@ export const listFindings = cache(async (): Promise<Finding[]> => {
     lastSeen: row.last_seen,
     resolvedAt: row.resolved_at ?? undefined,
     evidence: toEvidence(row.evidence),
+    justification: row.justification ?? undefined,
   }));
 });
 

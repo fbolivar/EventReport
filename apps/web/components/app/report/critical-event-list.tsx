@@ -1,5 +1,6 @@
 import type { CriticalEvent, Firewall } from "@eventreport/schema";
 
+import { AcknowledgeEvent } from "@/components/app/report/acknowledge-event";
 import { SeverityBadge } from "@/components/app/findings/severity-badge";
 import { Value } from "@/components/shared/value";
 import { formatDateTime } from "@/lib/utils/format";
@@ -11,9 +12,11 @@ import { formatDateTime } from "@/lib/utils/format";
 export function CriticalEventList({
   events,
   firewalls,
+  tenantId,
 }: {
   events: CriticalEvent[];
   firewalls: Firewall[];
+  tenantId: string;
 }) {
   return (
     <ul className="divide-y divide-line">
@@ -31,9 +34,11 @@ export function CriticalEventList({
                 {event.detail} · <Value>{firewall?.hostname ?? event.firewallId}</Value>
               </p>
             </div>
-            <span className="text-micro text-ink-soft">
-              {event.acknowledgedAt ? "Atendido" : "Sin atender"}
-            </span>
+            {event.acknowledgedAt ? (
+              <span className="text-micro text-ink-soft">Atendido</span>
+            ) : (
+              <AcknowledgeEvent tenantId={tenantId} eventId={event.id} />
+            )}
           </li>
         );
       })}

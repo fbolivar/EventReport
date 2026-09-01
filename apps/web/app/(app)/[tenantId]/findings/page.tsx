@@ -153,6 +153,7 @@ export default async function FindingsPage({
             firewall={selectedFirewall}
             remediation={steps}
             ruleControls={ruleControls}
+            tenantId={tenantId}
             closeHref={asQuery({ finding: undefined })}
           />
         ) : (

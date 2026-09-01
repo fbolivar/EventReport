@@ -4,7 +4,6 @@ import { FindingCard } from "@/components/app/findings/finding-card";
 import { PostureScore } from "@/components/app/report/posture-score";
 import { SeverityBreakdown } from "@/components/app/report/severity-breakdown";
 import { PageHeader } from "@/components/app/shell/page-header";
-import { Button, ButtonLink } from "@/components/shared/button";
 import { Skeleton } from "@/components/shared/states";
 import { Surface, SurfaceBody, SurfaceHeader } from "@/components/shared/surface";
 import { Value } from "@/components/shared/value";
@@ -13,6 +12,8 @@ import { countsBySeverity, listFindings, remediationFor, rulesByCode } from "@/l
 import { listReports, postureScore } from "@/lib/data/posture";
 import { getTenant, listFirewalls } from "@/lib/data/tenant";
 import { formatDate } from "@/lib/utils/format";
+import { GenerateReportButton } from "./generate-button";
+import { ReportDownload } from "./report-download";
 
 export const metadata: Metadata = { title: "Informes" };
 
@@ -47,7 +48,7 @@ export default async function ReportsPage({
       <PageHeader
         title="Informes"
         meta="Se generan solos según tu plan; también puedes pedirlos cuando quieras."
-        action={<Button>Generar informe</Button>}
+        action={<GenerateReportButton tenantId={tenantId} />}
       />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
@@ -75,14 +76,10 @@ export default async function ReportsPage({
                         <Value>{report.pages}</Value> páginas ·{" "}
                         <Value>{report.sizeKb}</Value> KB
                       </span>
-                      <ButtonLink
-                        href={`/${tenantId}/reports`}
-                        variant="secondary"
-                        size="sm"
-                      >
-                        Descargar PDF
-                      </ButtonLink>
+                      <ReportDownload reportId={report.id} />
                     </>
+                  ) : report.status === "failed" ? (
+                    <span className="text-micro text-critical">no se pudo generar</span>
                   ) : (
                     <span className="flex items-center gap-2 text-micro text-ink-soft">
                       <Skeleton className="h-2 w-24" /> generándose

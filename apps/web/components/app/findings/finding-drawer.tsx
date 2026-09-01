@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Finding, FindingRule, Firewall, RuleControl } from "@eventreport/schema";
 
 import { RemediationSteps } from "@/components/app/findings/remediation-steps";
+import { RiskDecision } from "@/components/app/findings/risk-decision";
 import { SeverityBadge } from "@/components/app/findings/severity-badge";
 import { Value } from "@/components/shared/value";
 import { BRAND_LABELS, FINDING_STATUS_LABELS, FRAMEWORK_SHORT_LABELS } from "@/content/labels";
@@ -18,6 +19,7 @@ export function FindingDrawer({
   firewall,
   remediation: steps,
   ruleControls,
+  tenantId,
   closeHref,
 }: {
   finding: Finding;
@@ -25,6 +27,7 @@ export function FindingDrawer({
   firewall?: Firewall;
   remediation?: string[];
   ruleControls: RuleControl[];
+  tenantId: string;
   closeHref: string;
 }) {
   const controls = ruleControls.filter((row) => row.ruleCode === finding.ruleCode);
@@ -112,6 +115,13 @@ export function FindingDrawer({
             </ul>
           </div>
         ) : null}
+
+        <RiskDecision
+          tenantId={tenantId}
+          findingId={finding.id}
+          status={finding.status}
+          justification={finding.justification}
+        />
       </div>
     </aside>
   );

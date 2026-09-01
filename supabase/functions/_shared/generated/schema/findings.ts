@@ -40,6 +40,8 @@ export interface Finding {
   resolvedAt?: Timestamp;
   /** Literal values taken from the device; always rendered in mono. */
   evidence: FindingEvidence[];
+  /** Written reason when the customer accepts the risk; audited. */
+  justification?: string;
 }
 
 export interface FindingEvidence {

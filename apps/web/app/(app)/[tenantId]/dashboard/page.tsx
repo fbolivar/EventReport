@@ -135,7 +135,7 @@ export default async function DashboardPage({
         />
         <SurfaceBody className="py-0">
           {events.length > 0 ? (
-            <CriticalEventList events={events} firewalls={firewalls} />
+            <CriticalEventList events={events} firewalls={firewalls} tenantId={tenantId} />
           ) : (
             <EmptyState
               title="Sin eventos críticos"

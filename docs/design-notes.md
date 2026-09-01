@@ -419,3 +419,59 @@ Se detectó en `/styleguide` comparando el `className` renderizado contra el esc
 Arreglo: `extendTailwindMerge` declarando la escala en el grupo `font-size`
 (`lib/utils/cn.ts`). **Regla:** cada paso nuevo de tipografía en `tokens.css` se agrega también
 a esa lista, o los colores de texto vuelven a desaparecer en silencio.
+
+---
+
+## Bloque 8 — Motor de informes
+
+El informe es el producto: es lo que el gerente recibe por correo y lo que el auditor archiva.
+Por eso la redacción no se improvisa en la plantilla del PDF.
+
+- `lib/reports/input.ts` arma un `ReportInput` con **todas** las cifras ya calculadas por
+  nosotros: postura, delta, hallazgos por severidad, actividad y cobertura por marco.
+- `lib/reports/sections.ts` le pide a `claude-opus-5` únicamente la prosa, con
+  `output_config` de `json_schema` para que la respuesta tenga forma fija, `thinking` adaptativo
+  y el bloque de sistema cacheado (es idéntico en todos los informes; los datos no).
+  El sistema prohíbe inventar cifras, y el modelo no tiene de dónde sacarlas: solo ve el input.
+- Sin `ANTHROPIC_API_KEY`, `templateSections()` redacta lo mismo de forma determinista. Un
+  informe con prosa más plana es mejor que un informe que no llega, y hace el flujo probable
+  sin red.
+- El PDF (`lib/reports/pdf.tsx`) repite los hex de la paleta porque `@react-pdf/renderer` no lee
+  variables CSS. El archivo lo dice en un comentario: si cambia `tokens.css`, hay que replicar.
+- La descarga (`app/api/reports/[reportId]/route.ts`) busca la fila por RLS y firma una URL de
+  300 s contra el bucket privado `reports`. **Regla:** al no existir un chequeo de autorización
+  aparte, no hay uno que olvidar; el bucket nunca se vuelve público.
+
+## Bloque 9 — Decisiones del cliente
+
+Tres acciones que faltaban para que el portal no fuera solo de lectura, todas auditadas:
+
+- **Aceptar un riesgo** exige justificación de 15 caracteres como mínimo y queda en el
+  historial; `ingest-config` no reabre un hallazgo `accepted`, así que el cliente no pelea con
+  el producto en cada snapshot.
+- **Marcar un evento como atendido** mueve la regla OP-002, que cuenta eventos críticos sin
+  atender de más de siete días. El botón no es cosmético.
+- **Declarar un control fuera de alcance** exige justificación, y la restricción
+  `compliance_not_applicable_needs_reason` la exige también en la base: un control no puede
+  quedar fuera de alcance sin motivo aunque un llamador futuro olvide pedirlo. El resumen del
+  marco resta ese control de los evaluables en la misma recarga.
+- **Invitar personas** sin `service_role`: la invitación es una fila, y un trigger
+  `after insert on auth.users` la convierte en membresía cuando esa persona se registra. Las
+  invitaciones pendientes se listan junto a las personas; una invitación que no se ve no se
+  puede recordar ni cancelar.
+
+#### Auto-blindaje: `.next` compartido entre `dev` y `build` (reincidencia)
+
+Volvió a aparecer `Cannot find module './vendor-chunks/...'` al abrir el portal: un `pnpm dev`
+anterior seguía vivo mientras se corría `pnpm build`. La regla ya estaba escrita en `CLAUDE.md`;
+lo que faltaba era comprobarla. **Regla:** antes de `build`, matar lo que escuche en el puerto
+3000 (`Get-NetTCPConnection -LocalPort 3000`), no solo el proceso que uno recuerda haber
+lanzado; después de `build`, borrar `apps/web/.next` antes de volver a `dev`.
+
+#### Verificación de este bloque
+
+Con datos reales en Supabase: evento atendido (4 botones → 3), riesgo aceptado con
+justificación y reabierto, control 5.25 fuera de alcance (8 cumplen → 7, 1 fuera de alcance),
+invitación registrada y visible como pendiente, informe generado (2 páginas, 7 KB) y descargado
+como `application/pdf` con cabecera `%PDF-1.3`. `scrollWidth === clientWidth` a 390, 820 y 1440.
+El estado del seed se restauró después de probar.

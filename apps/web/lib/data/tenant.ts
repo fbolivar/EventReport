@@ -166,3 +166,31 @@ export const listMembers = cache(async (): Promise<TenantMember[]> => {
     lastSeenAt: row.last_seen_at ?? undefined,
   }));
 });
+
+/** Invitación aún sin aceptar. La lista vive en Ajustes junto a las personas. */
+export interface PendingInvitation {
+  id: string;
+  email: string;
+  role: TenantMember["role"];
+  createdAt: string;
+}
+
+/**
+ * Invitaciones que todavía no se convirtieron en membresía. Sin esta lista una
+ * invitación se pierde de vista: nadie sabe a quién ya se invitó.
+ */
+export const listInvitations = cache(async (): Promise<PendingInvitation[]> => {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("tenant_invitations")
+    .select("id, email, role, created_at")
+    .is("accepted_at", null)
+    .order("created_at", { ascending: false });
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    email: row.email,
+    role: row.role,
+    createdAt: row.created_at,
+  }));
+});

@@ -4,14 +4,21 @@ import { BRANDS } from "@eventreport/schema";
 
 import { OnboardingWizard } from "@/components/app/settings/onboarding-wizard";
 import { PageHeader } from "@/components/app/shell/page-header";
-import { Button } from "@/components/shared/button";
 import { Surface, SurfaceBody, SurfaceHeader } from "@/components/shared/surface";
 import { Value } from "@/components/shared/value";
 import { BRAND_LABELS, FRAMEWORK_LABELS, MEMBER_ROLE_LABELS } from "@/content/labels";
 import { BRAND_INSTRUCTIONS } from "@/content/onboarding";
 import { listFrameworks } from "@/lib/data/compliance";
-import { getTenant, listCollectors, listFirewalls, listMembers, listSites } from "@/lib/data/tenant";
+import {
+  getTenant,
+  listCollectors,
+  listFirewalls,
+  listInvitations,
+  listMembers,
+  listSites,
+} from "@/lib/data/tenant";
 import { formatSince } from "@/lib/utils/format";
+import { InviteForm } from "./invite-form";
 
 export const metadata: Metadata = { title: "Ajustes" };
 
@@ -29,12 +36,13 @@ export default async function SettingsPage({
   const currentBrand: Brand =
     WIZARD_BRANDS.find((item) => item === brand) ?? WIZARD_BRANDS[0] ?? "fortigate";
 
-  const [tenant, sites, firewalls, collectors, members, frameworks] = await Promise.all([
+  const [tenant, sites, firewalls, collectors, members, invitations, frameworks] = await Promise.all([
     getTenant(tenantId),
     listSites(),
     listFirewalls(),
     listCollectors(),
     listMembers(),
+    listInvitations(),
     listFrameworks(),
   ]);
 
@@ -138,13 +146,9 @@ export default async function SettingsPage({
           <SurfaceHeader
             title="Personas"
             meta={`${members.length} con acceso`}
-            action={
-              <Button variant="secondary" size="sm">
-                Invitar
-              </Button>
-            }
           />
-          <SurfaceBody className="py-0">
+          <SurfaceBody className="space-y-4 py-4">
+            <InviteForm tenantId={tenantId} />
             <ul className="divide-y divide-line">
               {members.map((member) => (
                 <li key={member.id} className="flex items-center justify-between gap-4 py-3">
@@ -156,6 +160,19 @@ export default async function SettingsPage({
                   </div>
                   <span className="shrink-0 text-micro text-ink-soft">
                     {MEMBER_ROLE_LABELS[member.role]}
+                  </span>
+                </li>
+              ))}
+              {invitations.map((invitation) => (
+                <li key={invitation.id} className="flex items-center justify-between gap-4 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-small text-ink-soft">Invitación pendiente</p>
+                    <p className="truncate text-micro text-ink-soft">
+                      <Value>{invitation.email}</Value>
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-micro text-ink-soft">
+                    {MEMBER_ROLE_LABELS[invitation.role]}
                   </span>
                 </li>
               ))}
