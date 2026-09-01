@@ -944,3 +944,24 @@ Recorrido completo como un cliente, contra producción: se pulsó *Agregar colec
 se descargó `instalar-eventreport-acme.ps1`, se ejecutó, el asistente se abrió en el navegador, se
 llenaron dirección y clave, *Probar conexión* respondió `FGT60F-LAB · FortiGate 60F · v7.4.4`, y
 *Conectar* dejó el equipo registrado y el colector midiendo. Cero comandos escritos a mano.
+
+#### Dos fallos que solo aparecieron con hardware real
+
+**El `.ps1` no se puede ejecutar.** Windows bloquea por política cualquier script de PowerShell
+descargado de internet: el cliente ve un error de seguridad en rojo y abandona. El instalador pasó
+a ser un `.cmd`, que se ejecuta con doble clic sin tocar ninguna política y usa `curl.exe`, que
+viene en Windows desde 2018. De regalo, un archivo bajado con curl no queda marcado como
+"procedente de internet", así que el binario tampoco se bloquea.
+
+**El firewall llegó sin serie ni firmware.** Un FortiGate 40F de verdad se registró con
+`firmware: desconocido` y serie vacía. La causa: FortiOS devuelve **la serie y la versión en la
+raíz** de `monitor/system/status`, no dentro de `results`. Las pruebas no lo veían porque el
+simulador los ponía donde el código los esperaba — un simulador escrito por quien escribe el
+cliente confirma sus propios supuestos.
+
+Arreglado en los dos lados: el adaptador lee la raíz y cae a `results` si no está, con una prueba
+que usa la forma real de la respuesta; y `register-device` ya no usa una serie vacía como
+identidad —dos equipos sin serie se pisarían entre sí—, sino que cae al nombre del equipo.
+
+**Regla:** un simulador sirve para ejercitar el camino, no para validar el contrato. El contrato
+se confirma contra un equipo real o contra la documentación del fabricante.

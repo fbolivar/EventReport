@@ -93,7 +93,7 @@ export function EnrolmentForm({
               type="button"
               size="sm"
               onClick={() =>
-                download(state.installer!.windows, `${state.installer!.filename}.ps1`)
+                download(state.installer!.windows, `${state.installer!.filename}.cmd`)
               }
             >
               Windows

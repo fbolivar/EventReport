@@ -83,7 +83,17 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 
 // Wire shapes of the endpoints this adapter reads. Only the fields the rules
 // need are modelled; the rest of the response is ignored on purpose.
+// systemStatus refleja la respuesta real de `monitor/system/status`.
+//
+// FortiOS devuelve la **serie y la versión en la raíz** de la respuesta, no
+// dentro de `results`. Un FortiGate 40F de verdad se registró sin serie ni
+// firmware por leerlos en el sitio equivocado, y las pruebas no lo vieron
+// porque el simulador los ponía donde el código los esperaba. Se leen de los
+// dos lugares: distintas versiones y modelos difieren.
 type systemStatus struct {
+	Serial  string `json:"serial"`
+	Version string `json:"version"`
+	Build   int    `json:"build"`
 	Results struct {
 		Hostname string `json:"hostname"`
 		Serial   string `json:"serial"`
@@ -92,6 +102,21 @@ type systemStatus struct {
 		Uptime   int64  `json:"uptime"`
 		HAMode   string `json:"ha_mode"`
 	} `json:"results"`
+}
+
+// serial y firmware prefieren la raíz y caen a `results` si no está.
+func (s systemStatus) serial() string {
+	if s.Serial != "" {
+		return s.Serial
+	}
+	return s.Results.Serial
+}
+
+func (s systemStatus) firmware() string {
+	if s.Version != "" {
+		return s.Version
+	}
+	return s.Results.Version
 }
 
 type adminAccount struct {
@@ -239,8 +264,8 @@ func (a *Adapter) FetchConfig(ctx context.Context) (*normalize.Config, error) {
 		Device: normalize.Device{
 			Brand:         a.Brand(),
 			Model:         status.Results.Model,
-			Serial:        status.Results.Serial,
-			Firmware:      status.Results.Version,
+			Serial:        status.serial(),
+			Firmware:      status.firmware(),
 			Hostname:      status.Results.Hostname,
 			HAMode:        haMode(status.Results.HAMode),
 			UptimeSeconds: status.Results.Uptime,

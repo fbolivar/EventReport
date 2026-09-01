@@ -16,37 +16,61 @@ export interface InstallerInput {
   tenantName: string;
 }
 
+const CRLF = "\r\n";
+const BACKSLASH = "\\";
+
+/**
+ * Un `.cmd`, no un `.ps1`.
+ *
+ * Windows bloquea por política de ejecución cualquier script de PowerShell
+ * descargado de internet: el cliente ve un error de seguridad en rojo y
+ * abandona —pasó en la primera instalación real—. Un `.cmd` se ejecuta con
+ * doble clic sin tocar ninguna política, y `curl.exe` viene incluido en Windows
+ * desde 2018. De paso, un archivo bajado con curl no queda marcado como
+ * "procedente de internet", así que el binario tampoco se bloquea.
+ *
+ * Los saltos de línea son CRLF a propósito: un `.cmd` con saltos de Unix falla
+ * de formas difíciles de diagnosticar.
+ */
 export function windowsInstaller({
   token,
   supabaseUrl,
   downloadUrl,
   tenantName,
 }: InstallerInput): string {
-  // PowerShell con CRLF: un salto de línea Unix rompe el script en Windows.
+  const destino = `%LOCALAPPDATA%${BACKSLASH}EventReport`;
+
   return [
-    "# Instalador de EventReport",
-    `# Empresa: ${tenantName}`,
-    "#",
-    "# Haz clic derecho sobre este archivo y elige 'Ejecutar con PowerShell'.",
-    "# Descarga el colector, lo registra y abre el asistente en tu navegador.",
+    "@echo off",
+    "setlocal",
+    "chcp 65001 > nul",
     "",
-    "$ErrorActionPreference = 'Stop'",
-    "$destino = Join-Path $env:LOCALAPPDATA 'EventReport'",
-    "$binario = Join-Path $destino 'collector.exe'",
+    `title Instalacion de EventReport - ${tenantName}`,
+    "echo.",
+    "echo   EventReport - instalacion del colector",
+    "echo.",
     "",
-    "Write-Host ''",
-    "Write-Host '  EventReport - instalacion del colector' -ForegroundColor Cyan",
-    "Write-Host ''",
+    `set "DESTINO=${destino}"`,
+    `set "BINARIO=%DESTINO%${BACKSLASH}collector.exe"`,
+    'if not exist "%DESTINO%" mkdir "%DESTINO%"',
     "",
-    "New-Item -ItemType Directory -Force -Path $destino | Out-Null",
+    "echo   Descargando el colector...",
+    `curl.exe -fsSL "${downloadUrl}" -o "%BINARIO%"`,
+    "if errorlevel 1 (",
+    "  echo.",
+    "  echo   No se pudo descargar el colector. Revisa la conexion a internet.",
+    "  echo.",
+    "  pause",
+    "  exit /b 1",
+    ")",
     "",
-    "Write-Host '  Descargando el colector...'",
-    `Invoke-WebRequest -Uri '${downloadUrl}' -OutFile $binario -UseBasicParsing`,
+    "echo   Registrando este equipo...",
+    "echo.",
+    `"%BINARIO%" setup -token "${token}" -url "${supabaseUrl}" -config "%DESTINO%${BACKSLASH}collector.json"`,
     "",
-    "Write-Host '  Registrando este equipo...'",
-    `& $binario setup -token '${token}' -url '${supabaseUrl}' -config (Join-Path $destino 'collector.json')`,
+    "pause",
     "",
-  ].join("\r\n");
+  ].join(CRLF);
 }
 
 export function linuxInstaller({
