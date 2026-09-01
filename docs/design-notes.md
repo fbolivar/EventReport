@@ -609,3 +609,232 @@ firmware > Backup & restore.
 **Regla:** una ruta de menú es un dato con versión, no una constante. Cada vez que se agregue una
 marca o se suba una versión mayor de firmware, el catálogo se revisa contra la documentación del
 fabricante y la fecha de la revisión queda escrita aquí.
+
+## Bloque 12 — Cambios de configuración
+
+Guardábamos snapshots desde el primer día y nadie los comparaba nunca. `diffConfigs()`
+(`packages/rules/src/diff.ts`) los convierte en la bitácora del firewall, y `ingest-config` la
+escribe en `config_changes` cada vez que llega un snapshot nuevo.
+
+Cómo compara, y por qué así:
+
+- **Por identidad, no por texto.** Una política se sigue por su `id`, un administrador por su
+  nombre. Reordenar la lista no es un cambio.
+- **Solo los campos que importan.** Que un contador de aciertos suba no es un cambio de
+  configuración; llenar la bitácora de ruido es la forma más rápida de que nadie la lea.
+- **Ninguna credencial entra en el diff**: ni PSK, ni comunidad SNMP, ni token. De `auth` viaja el
+  método ("psk", "cert"), nunca la clave. Hay una prueba que falla si algo de eso aparece.
+- **La posición de una política sí es un cambio**: el orden decide cuál coincide primero, así que
+  mover una regla hacia arriba puede abrir un permiso sin editar ninguna.
+
+El informe (`changes`) es a demanda, no programado: el §10 no lo incluye en ningún plan. Como el
+hardening y el cumplimiento, no lo redacta el modelo — es un registro, y un registro que se
+redacta distinto cada vez no sirve de registro. Los cambios sin autor se cuentan aparte en la
+portada: son los que abren OP-004 y los que el auditor pregunta uno por uno.
+
+#### Tres fallos que solo aparecieron probando contra la función desplegada
+
+**El orden de un conjunto se reportaba como cambio.** Los perfiles de inspección salían como
+"av, ips, web, appCtl → ips, av, web, appCtl": el mismo conjunto en otro orden. Ahora las listas
+se ordenan antes de comparar. **Regla:** en un diff, una lista sin orden semántico se compara como
+conjunto.
+
+**Un snapshot que llega tarde invertía el diff.** La función comparaba contra el snapshot más
+reciente de la tabla, no contra el anterior a la hora del que llega. El colector guarda en búfer y
+sube con retraso por diseño (§6.7), así que esto no es hipotético: una subida atrasada reportaba
+como cambio nuevo lo que ya se había corregido. Ahora la consulta lleva
+`.lt("collected_at", collectedAt)`.
+
+**La flecha entre el valor viejo y el nuevo se imprimía como un glifo vacío.** El mismo fallo de
+WinAnsi del bloque 10, en un sitio nuevo: `pdfText()` estaba aplicado a los valores, pero la
+flecha iba suelta en el JSX. **Regla:** en un PDF, el texto literal del JSX también pasa por
+`pdfText()` si no es ASCII; no basta con envolver las variables.
+
+#### Auto-blindaje: el servidor de desarrollo sirviendo un módulo viejo
+
+El informe de cambios salía siendo el ejecutivo. El código enrutaba bien, la fila decía
+`type: changes` y el PDF era otro. La causa no estaba en el código: `pnpm dev` seguía ejecutando
+la versión anterior de `lib/reports/render.ts` —los cambios en componentes sí se recargaban, los
+de un módulo del servidor usado dentro de `after()` no—. Se descubrió metiendo un `console.error`
+que **nunca apareció** en el registro: eso, y no el PDF, fue lo que probó que el archivo editado
+no se estaba ejecutando.
+
+**Regla:** si un cambio en código de servidor parece no surtir efecto, lo primero es reiniciar
+`pnpm dev` y volver a probar; recién después se depura el código. Y para confirmar que una rama
+nueva se ejecuta, un rastro que se pueda ver vale más que mirar el resultado.
+
+## Bloque 13 — Actividad de red
+
+El informe más barato de construir —los rollups ya estaban— y el que completa el plan estándar
+(§10). Dos páginas: cifras del período con el reparto por hora del día, y el detalle con los
+top-N y la tabla diaria.
+
+- **Las horas se dibujan con barras de `View`**, no con un gráfico: react-pdf no tiene canvas, y
+  una barra de ancho proporcional se lee igual e imprime bien en blanco y negro.
+- El texto explica por qué mirar las horas: actividad a las tres de la mañana es la señal, no el
+  total del día.
+- **Una dimensión sin datos no se imprime.** Una tabla vacía en un informe hace dudar de todas las
+  demás.
+- El informe repite, en su propia página, que las líneas de registro se quedan en la red del
+  cliente: dice cuánto y de qué tipo, nunca quién visitó qué. Esa frontera es del producto (§4), y
+  el documento que llega al cliente es donde tiene que verse.
+
+#### Auto-blindaje: el número de páginas era una estimación
+
+Cada tipo de informe calculaba sus páginas con una división —`1 + ceil(items / 4)`— y la ficha del
+portal decía "2 páginas" en un PDF de 3. Un dato que el usuario puede desmentir abriendo el
+archivo. Ahora `countPages()` cuenta los objetos `/Type /Page` del PDF ya renderizado, una sola
+vez para todos los tipos. **Regla:** si el dato está en el artefacto, se lee del artefacto; no se
+estima.
+
+## Bloque 14 — Tablero multicliente (MSSP)
+
+La vista existía, pero con un solo tenant en la base no se podía juzgar. Lo primero fue crear un
+segundo cliente de demostración deliberadamente distinto —plan menor, un equipo, colector caído,
+eventos sin atender, postura peor— en `supabase/seed/demo-mssp.sql`. **Regla:** una vista que
+compara N cosas no se puede evaluar con N=1.
+
+Con dos clientes a la vista, el defecto de fondo quedó claro: **el tablero ordenaba por puntaje**,
+y el puntaje no dice qué hacer hoy. `attentionFor()` (`lib/mssp/attention.ts`, seis pruebas) da
+una frase por cliente y un orden por urgencia:
+
+1. **Colector caído.** Va antes que cualquier hallazgo: sin datos nuevos, el informe del mes sale
+   incompleto y nadie se entera hasta abrirlo. Ningún puntaje refleja eso.
+2. **Eventos críticos sin atender de más de siete días** —el umbral de OP-002—: ya ocurrieron.
+3. Hallazgos críticos abiertos, caída de postura mayor a cinco puntos, eventos recientes, colector
+   sin reportar, hallazgos altos.
+4. Y si no hay nada, lo dice: "Sin novedades: nada que hacer hoy". Una celda vacía se lee como
+   dato faltante.
+
+El delta del tablero comparaba contra el día anterior, así que un cliente que se deteriora despacio
+aparecía "sin cambio" todos los días. Ahora compara contra hace un mes, igual que `postureScore`
+en el portal. **Regla:** la misma cifra se calcula igual en todas las vistas, o el producto se
+contradice a sí mismo.
+
+Queda pendiente el informe "Comparativo de clientes" (§8, mensual para MSSP): el tablero responde
+"qué hago hoy", no "cómo va mi cartera este mes".
+
+## Bloque 15 — Enrolamiento del colector
+
+El primer contacto real del cliente con el producto: instala el colector, pega un comando y el
+equipo aparece conectado en el portal. Hasta ahora la Edge Function `enroll` era un esqueleto que
+devolvía 501 y el colector Go degradaba pidiendo registrar la clave a mano.
+
+Cómo quedó, y por qué:
+
+- **El token se guarda hasheado.** Es la única llamada sin firma —el colector todavía no tiene
+  identidad—, así que el token *es* la credencial. Quien lea `collector_enrolments`, nosotros
+  incluidos, no puede enrolar un colector con lo que hay ahí.
+- **Se muestra una sola vez**, y la pantalla lo dice antes de que el operador cierre la ventana.
+  Se entrega el comando completo, no el token suelto: lo que se pega en la máquina del cliente es
+  el comando.
+- **Un solo uso y 24 horas.** Un token que sirve para siempre acaba pegado en un chat. Se quema
+  con `update ... where used_at is null`, así que dos enrolamientos simultáneos no pueden ganar
+  los dos, y si el quemado falla se borra el colector recién creado.
+- **Token inválido, usado y vencido responden lo mismo**: no se le dice a quien prueba tokens cuál
+  de las tres acertó.
+- **La configuración la decide la nube**, derivada del plan: snapshots por día, minutos de rollup,
+  días de bóveda, tope de eventos. El colector la guarda tal cual. Si la calculara él, un cliente
+  se subiría el cupo editando un archivo local.
+- El colector arranca en `measuring`: los primeros días sirven para conocer el tráfico normal
+  antes de empezar a llamar la atención (§5).
+
+Probado de punta a punta con el binario Go real contra la función desplegada: token emitido en el
+portal, `collector enroll` lo consume, el equipo aparece en Ajustes con bóveda de 30 días —la del
+plan premium—, y **el mismo token vuelve a usarse y responde 401**, igual que uno vencido.
+
+#### El segundo cliente destapó que el portal nunca filtraba por empresa
+
+Al crear el cliente de demostración para el tablero MSSP, Ajustes de Acme empezó a decir "3 sedes"
+—Acme tiene dos— y los hallazgos de una empresa aparecían en el portal de la otra. La causa:
+**la capa de datos no filtraba por la empresa de la URL**, se apoyaba solo en RLS. Con un usuario
+por cliente eso es correcto; con un MSSP miembro de varias empresas, el portal sumaba todo lo que
+el usuario puede ver, y un informe firmado podía salir con hallazgos de otro cliente.
+
+RLS decide **quién** puede ver; faltaba decidir **qué** se está mirando. El middleware anota la
+empresa de la URL en un encabezado y `createClient()` devuelve un cliente acotado a ella con el
+mismo proxy que ya usaba la generación programada. El RPC de personas no pasa por el proxy —es una
+función, no una tabla—, así que ahora recibe la empresa como argumento; sigue comprobando la
+membresía por dentro: **el argumento acota, no autoriza**.
+
+**Regla:** en una aplicación multiempresa, RLS es la frontera de seguridad y el filtro por la
+empresa de la URL es la de corrección. Faltando el segundo, el error no es un rechazo: son datos
+de más, que es peor. Y no se ve con un solo cliente en la base.
+
+#### Auto-blindaje: reconstruir la respuesta del middleware borra las cookies de sesión
+
+Marcar la empresa de la URL en un encabezado rompió el inicio de sesión: *"An unexpected response
+was received from the server"* al pulsar Entrar. La causa no estaba en el formulario. En
+`updateSession`, `response` se reconstruye cada vez que Supabase escribe cookies —eso es lo que
+refresca la sesión—, y yo lo reconstruía **después**, con `NextResponse.next({ request })`,
+tirando esas cookies a la basura. El usuario se autenticaba y salía sin sesión.
+
+Arreglo: el encabezado se pone sobre `request` **antes** de crear el cliente; toda respuesta
+derivada de esa petición ya lo lleva. **Regla:** en el middleware, `NextResponse.next({ request })`
+se llama una vez al principio y solo se vuelve a llamar dentro de `setAll`. Cualquier otra
+reconstrucción descarta lo que Supabase acababa de escribir.
+
+En el mismo arreglo apareció otro defecto: el `next` del inicio de sesión se validaba contra la
+**primera** empresa del usuario. Quien administra varias pedía `/nortis/findings`, se le exigía
+sesión y terminaba en `/acme/dashboard`. Ahora se valida contra todas las empresas de las que es
+miembro —la lista sale de RLS—, así que un `next` inventado sigue sin llevar a nadie donde no
+tiene acceso.
+
+## Bloque 16 — Registrar el firewall, y el correo
+
+### El equipo que el colector vigila
+
+`collector enroll` daba identidad al colector, pero el archivo quedaba con `devices: null`: no
+sabía a qué firewall mirar. `collector device add` cierra ese hueco y es el segundo comando que
+ejecuta el técnico.
+
+El orden importa: **primero habla con el equipo, después guarda**. Un token equivocado se descubre
+con el técnico delante, no tres días más tarde cuando el primer informe salga vacío. Después sube
+a `register-device` lo que el firewall dice de sí mismo —marca, modelo, serie, versión— y **cifra
+el token en disco**. El token no viaja: si viajara, un robo de nuestra base daría acceso a los
+firewalls de todos los clientes. Hay una comprobación de que el archivo no lo contiene en claro.
+
+`register-device` resuelve el tenant y la sede desde el colector firmante, nunca desde el cuerpo,
+y usa la **serie** como identidad del equipo: reinstalar el colector actualiza el firewall, no lo
+duplica ni consume cupo del plan.
+
+**TLS.** Un FortiGate de fábrica presenta un certificado autofirmado, así que verificar falla.
+`-insecure` existe, está apagado por defecto y el colector lo advierte en el registro cada vez que
+conecta; queda escrito en el archivo de configuración para que se pueda auditar después. Aceptar
+un certificado que no se puede validar es una decisión, no un detalle de conexión.
+
+Probado de punta a punta contra un FortiGate simulado con TLS autofirmado (`scripts/fakegate`, en
+el scratchpad): sin `-insecure` falla con `certificate signed by unknown authority`; con token
+equivocado, `401`; con todo correcto registra el equipo, `collector test` responde
+`conexión correcta` y el firewall aparece en el portal con su modelo y firmware.
+
+La guía para hacerlo contra un equipo real —perfil de solo lectura, usuario de API, *trusted
+hosts*, syslog y los errores frecuentes— está en `docs/conectar-un-firewall.md`.
+
+### Correo
+
+`docs/entrega-por-correo.md` tiene el paso a paso de Google Workspace: cuenta dedicada
+`informes@`, alias, verificación en dos pasos, contraseña de aplicación, y **SPF, DKIM y DMARC**,
+que es la parte que se salta todo el mundo y la razón por la que los informes acaban en spam.
+
+El código (`lib/email/send.ts`) sale por SMTP y está detrás de una interfaz: cambiar a un proveedor
+transaccional es cambiar el transporte. Tres decisiones que quedan en el código, no en el correo:
+
+- **Sin credenciales no falla**, informa que no envió. Un informe generado y guardado vale aunque
+  el aviso no salga; al revés, no.
+- **El correo no lleva hallazgos.** Un hallazgo dice dónde está el hueco del firewall del cliente;
+  el correo no es un canal para eso.
+- **El enlace no lleva token**: apunta al portal, que pide sesión. Reenviar el correo no regala
+  acceso.
+
+El aviso sale solo desde la generación programada. Quien acaba de pulsar "Generar" no necesita un
+correo diciéndole que lo pidió.
+
+`scripts/probe-email.ts` prueba el envío sin generar nada; hoy responde "faltan SMTP_HOST,
+SMTP_USER o SMTP_PASSWORD", que es exactamente lo que debe decir hasta que la cuenta exista.
+
+#### Nota: `gofmt -l` en Windows
+
+El repositorio se saca con CRLF, y `gofmt` espera LF: `gofmt -l` marca archivos que no tienen nada
+mal. Antes de "arreglar" formato, mirar `gofmt -d`: si el diff son líneas completas sin cambios
+visibles, es el fin de línea y hay que dejarlo.

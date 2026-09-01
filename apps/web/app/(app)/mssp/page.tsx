@@ -7,6 +7,7 @@ import { Surface } from "@/components/shared/surface";
 import { Value } from "@/components/shared/value";
 import { COLLECTOR_STATUS_LABELS } from "@/content/labels";
 import { listMsspRows } from "@/lib/data/mssp";
+import { byAttention } from "@/lib/mssp/attention";
 import { formatSince } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 import { scoreKey, SEVERITY_CLASSES } from "@/lib/utils/severity";
@@ -21,10 +22,19 @@ const STATUS_DOT = {
 } as const;
 
 /** Vista multicliente: quién necesita atención hoy, ordenado por score. */
+const LEVEL_TEXT = {
+  urgent: "text-critical",
+  watch: "text-high",
+  calm: "text-ink-soft",
+} as const;
+
 export default async function MsspPage() {
-  const rows = (await listMsspRows()).sort((a, b) => a.score - b.score);
+  // Ordenados por urgencia, no por puntaje: un colector caído deja al cliente
+  // sin datos y eso no aparece en ningún puntaje.
+  const rows = byAttention(await listMsspRows());
   const now = new Date().toISOString();
   const criticalTotal = rows.reduce((sum, row) => sum + row.critical, 0);
+  const urgent = rows.filter((row) => row.level === "urgent").length;
 
   return (
     <>
@@ -38,7 +48,11 @@ export default async function MsspPage() {
         <div className="space-y-8">
           <PageHeader
             title="Clientes"
-            meta={`${rows.length} empresas · ${criticalTotal} hallazgos críticos abiertos en total`}
+            meta={[
+              `${rows.length} ${rows.length === 1 ? "empresa" : "empresas"}`,
+              `${urgent} ${urgent === 1 ? "necesita" : "necesitan"} atención hoy`,
+              `${criticalTotal} ${criticalTotal === 1 ? "hallazgo crítico" : "hallazgos críticos"} en total`,
+            ].join(" · ")}
           />
 
           <Surface className="px-5 py-2">
@@ -61,6 +75,9 @@ export default async function MsspPage() {
                   <th scope="col" className="py-2 pr-4 font-medium">
                     Colector
                   </th>
+                  <th scope="col" className="hidden py-2 pr-4 font-medium lg:table-cell">
+                    Por qué
+                  </th>
                   <th scope="col" className="hidden py-2 text-right font-medium md:table-cell">
                     Último informe
                   </th>
@@ -73,7 +90,8 @@ export default async function MsspPage() {
                       <Link href={`/${row.tenantId}/dashboard`} className="rounded-control">
                         <span className="text-small">{row.name}</span>
                         <span className="mt-0.5 block text-micro text-ink-soft">
-                          plan {row.plan} · <Value>{row.firewalls}</Value> firewalls
+                          plan {row.plan} · <Value>{row.firewalls}</Value>{" "}
+                          {row.firewalls === 1 ? "firewall" : "firewalls"}
                         </span>
                       </Link>
                     </td>
@@ -107,6 +125,9 @@ export default async function MsspPage() {
                         {COLLECTOR_STATUS_LABELS[row.collectorStatus]}
                       </span>
                     </td>
+                    <td className={cn("hidden py-3 pr-4 lg:table-cell", LEVEL_TEXT[row.level])}>
+                      <span className="text-small">{row.reason}</span>
+                    </td>
                     <td className="hidden py-3 text-right md:table-cell">
                       <Value className="text-micro text-ink-soft">
                         {row.lastReport ? formatSince(row.lastReport, now) : "—"}
@@ -119,8 +140,10 @@ export default async function MsspPage() {
           </Surface>
 
           <p className="max-w-prose text-small text-ink-soft">
-            Ordenados por postura, de menor a mayor: arriba está quien necesita atención hoy. La
-            lista sale de RLS: aparecen exactamente las empresas de las que eres miembro.
+            Ordenados por urgencia: primero el cliente que se quedó sin colector —sin datos nuevos
+            el informe del mes sale incompleto—, después los eventos críticos sin atender de más de
+            siete días, y solo entonces la postura. La lista sale de RLS: aparecen exactamente las
+            empresas de las que eres miembro.
           </p>
         </div>
       </main>

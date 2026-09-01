@@ -29,11 +29,11 @@ test("el plan básico solo recibe el ejecutivo", () => {
   );
 });
 
-test("el plan estándar agrega hardening, y el premium el cumplimiento por marco", () => {
+test("el plan estándar agrega hardening y actividad; el premium, cumplimiento por marco", () => {
   const standard = dueReports({ now, plan: "standard", frameworks: ["iso27001"], existing: [] });
   assert.deepEqual(
     standard.map((job) => job.type),
-    ["executive", "hardening"],
+    ["executive", "hardening", "activity"],
   );
 
   const premium = dueReports({
@@ -44,7 +44,7 @@ test("el plan estándar agrega hardening, y el premium el cumplimiento por marco
   });
   assert.deepEqual(
     premium.map((job) => `${job.type}${job.framework ? `:${job.framework}` : ""}`),
-    ["executive", "hardening", "compliance:iso27001", "compliance:pci_dss"],
+    ["executive", "hardening", "activity", "compliance:iso27001", "compliance:pci_dss"],
   );
 });
 
@@ -60,7 +60,7 @@ test("no repite un informe que ya existe para ese período", () => {
   });
   assert.deepEqual(
     jobs.map((job) => job.type),
-    ["hardening"],
+    ["hardening", "activity"],
   );
 });
 

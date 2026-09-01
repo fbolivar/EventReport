@@ -10,6 +10,7 @@
  * Credentials, PSKs and SNMP communities are never part of this payload.
  */
 import type { FirewallConfig } from "../_shared/generated/schema/index.ts";
+import { diffConfigs } from "../_shared/generated/rules/diff.ts";
 import { evaluate, reconcile, toFindings } from "../_shared/generated/rules/engine.ts";
 import { score } from "../_shared/generated/rules/score.ts";
 import type { OperationalSignals } from "../_shared/generated/rules/types.ts";
@@ -131,10 +132,52 @@ Deno.serve(
       return json({ error: "daily snapshot quota reached" }, 429);
     }
 
-    await context.admin.from("config_snapshots").upsert(
-      { tenant_id: context.tenantId, firewall_id: firewallId, collected_at: collectedAt, config, sha256 },
-      { onConflict: "firewall_id,sha256,collected_at" },
-    );
+    // El snapshot inmediatamente anterior **a la hora de este**, no el más
+    // reciente de la tabla. El colector guarda en búfer y puede subir con
+    // retraso: comparar contra uno posterior invierte el diff y reporta como
+    // cambio lo que en realidad ya se había corregido.
+    const { data: previous } = await context.admin
+      .from("config_snapshots")
+      .select("id, config")
+      .eq("firewall_id", firewallId)
+      .lt("collected_at", collectedAt)
+      .order("collected_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { data: inserted } = await context.admin
+      .from("config_snapshots")
+      .upsert(
+        { tenant_id: context.tenantId, firewall_id: firewallId, collected_at: collectedAt, config, sha256 },
+        { onConflict: "firewall_id,sha256,collected_at" },
+      )
+      .select("id")
+      .maybeSingle();
+
+    // Diff contra el snapshot anterior (§8). El primero de todos no tiene con
+    // qué compararse y no genera cambios: es la línea base, no una alta masiva.
+    let changes = 0;
+    if (previous?.config && inserted?.id) {
+      const diff = diffConfigs(previous.config, config);
+      changes = diff.length;
+
+      if (diff.length > 0) {
+        await context.admin.from("config_changes").insert(
+          diff.map((item) => ({
+            tenant_id: context.tenantId,
+            firewall_id: firewallId,
+            from_snapshot_id: previous.id,
+            to_snapshot_id: inserted.id,
+            section: item.section,
+            change: item,
+            // El actor sale del syslog de administración, que llega por otra
+            // vía. Sin él, OP-004 se abre: un cambio sin autor no se audita.
+            actor: null,
+            ts: collectedAt,
+          })),
+        );
+      }
+    }
 
     const signals = await operationalSignals(context, firewallId);
     const now = new Date().toISOString();
@@ -227,6 +270,7 @@ Deno.serve(
     return json({
       needsBody: false,
       evaluated: true,
+      changes,
       opened: opened.length,
       updated: updated.length,
       resolved: resolved.length,

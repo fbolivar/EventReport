@@ -153,9 +153,13 @@ export const listCollectors = cache(async (): Promise<Collector[]> => {
  * función SECURITY DEFINER que filtra por membresía dentro de la propia
  * función: nadie puede pedir los miembros de un tenant ajeno.
  */
-export const listMembers = cache(async (): Promise<TenantMember[]> => {
+export const listMembers = cache(async (tenantSlug?: string): Promise<TenantMember[]> => {
   const supabase = await createClient();
-  const { data } = await supabase.rpc("tenant_member_profiles");
+  // El RPC no pasa por el filtro del cliente —es una función, no una tabla—,
+  // así que la empresa se le pasa a mano. Sin esto, un MSSP ve en Ajustes de un
+  // cliente a las personas de todos.
+  const uuid = tenantSlug ? await tenantUuid(tenantSlug) : undefined;
+  const { data } = await supabase.rpc("tenant_member_profiles", { p_tenant_id: uuid ?? undefined });
 
   return (data ?? []).map((row) => ({
     id: row.id,
@@ -192,5 +196,35 @@ export const listInvitations = cache(async (): Promise<PendingInvitation[]> => {
     email: row.email,
     role: row.role,
     createdAt: row.created_at,
+  }));
+});
+
+/** Token de enrolamiento pendiente: emitido, sin usar y sin vencer. */
+export interface PendingEnrolment {
+  id: string;
+  siteId: string;
+  label?: string;
+  expiresAt: string;
+}
+
+/**
+ * Enrolamientos que todavía esperan un colector. No devuelve el token —en la
+ * base solo hay un hash—, sino el hecho de que alguien está esperando: sin esta
+ * lista, un token emitido y perdido es invisible.
+ */
+export const listPendingEnrolments = cache(async (): Promise<PendingEnrolment[]> => {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("collector_enrolments")
+    .select("id, site_id, label, expires_at")
+    .is("used_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false });
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    siteId: row.site_id,
+    label: row.label ?? undefined,
+    expiresAt: row.expires_at,
   }));
 });

@@ -15,9 +15,11 @@ import {
   listFirewalls,
   listInvitations,
   listMembers,
+  listPendingEnrolments,
   listSites,
 } from "@/lib/data/tenant";
-import { formatSince } from "@/lib/utils/format";
+import { formatDateTime, formatSince } from "@/lib/utils/format";
+import { EnrolmentForm } from "./enrolment-form";
 import { InviteForm } from "./invite-form";
 
 export const metadata: Metadata = { title: "Ajustes" };
@@ -36,15 +38,17 @@ export default async function SettingsPage({
   const currentBrand: Brand =
     WIZARD_BRANDS.find((item) => item === brand) ?? WIZARD_BRANDS[0] ?? "fortigate";
 
-  const [tenant, sites, firewalls, collectors, members, invitations, frameworks] = await Promise.all([
+  const [tenant, sites, firewalls, collectors, members, invitations, enrolments, frameworks] =
+    await Promise.all([
     getTenant(tenantId),
     listSites(),
     listFirewalls(),
     listCollectors(),
-    listMembers(),
+    listMembers(tenantId),
     listInvitations(),
+    listPendingEnrolments(),
     listFrameworks(),
-  ]);
+    ]);
 
   const now = new Date().toISOString();
   const siteById = (id: string) => sites.find((site) => site.id === id);
@@ -53,7 +57,9 @@ export default async function SettingsPage({
     <div className="space-y-8">
       <PageHeader
         title="Ajustes"
-        meta={`${tenant?.name ?? ""} · plan ${tenant?.plan ?? ""} · ${sites.length} sedes`}
+        meta={`${tenant?.name ?? ""} · plan ${tenant?.plan ?? ""} · ${sites.length} ${
+          sites.length === 1 ? "sede" : "sedes"
+        }`}
       />
 
       <Surface>
@@ -118,6 +124,27 @@ export default async function SettingsPage({
 
         <Surface>
           <SurfaceHeader title="Colectores" meta="Uno por sede" />
+          <SurfaceBody className="space-y-4">
+            <EnrolmentForm tenantId={tenantId} sites={sites} />
+
+            {enrolments.length > 0 ? (
+              <ul className="divide-y divide-line border-t border-line">
+                {enrolments.map((enrolment) => {
+                  const site = siteById(enrolment.siteId);
+                  return (
+                    <li key={enrolment.id} className="py-3">
+                      <p className="text-small text-ink-soft">
+                        Token pendiente para {enrolment.label ?? "un colector"} · {site?.name}
+                      </p>
+                      <p className="mt-0.5 text-micro text-ink-soft">
+                        Vence el {formatDateTime(enrolment.expiresAt)}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+          </SurfaceBody>
           <SurfaceBody className="py-0">
             <ul className="divide-y divide-line">
               {collectors.map((collector) => {

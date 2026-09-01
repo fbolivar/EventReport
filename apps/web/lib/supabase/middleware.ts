@@ -9,6 +9,18 @@ import type { Database } from "@/lib/supabase/types";
  * against Supabase, and the tenant itself is guarded by RLS on every query.
  */
 export async function updateSession(request: NextRequest) {
+  // La empresa que pide la URL viaja en un encabezado para que la capa de datos
+  // pueda acotar cada consulta a ella. RLS decide **quién** puede ver; esto
+  // decide **qué** se está mirando: sin ello, un usuario con acceso a varias
+  // empresas —un MSSP— ve en /acme los datos de todos sus clientes.
+  //
+  // Se marca aquí arriba, antes de crear el cliente: `response` se reconstruye
+  // cada vez que Supabase escribe cookies de sesión, y reconstruirlo después
+  // descartaría esas cookies. Eso rompió el inicio de sesión una vez.
+  const segment = request.nextUrl.pathname.split("/")[1] ?? "";
+  const reserved = new Set(["", "login", "mssp", "api", "styleguide", "_next", "icon.svg"]);
+  if (!reserved.has(segment)) request.headers.set("x-tenant-slug", segment);
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient<Database>(
@@ -37,6 +49,7 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+
   const isAuthRoute = pathname.startsWith("/login");
   // El cron no es una persona: se autentica con un secreto compartido dentro de
   // la propia ruta, y mandarlo a /login solo lo dejaría sin poder trabajar.

@@ -59,6 +59,7 @@ export function dueReports({ now, plan, frameworks, existing }: ScheduleInput): 
 
   if (plan === "standard" || plan === "premium") {
     wanted.push({ type: "hardening", periodStart: month.start, periodEnd: month.end });
+    wanted.push({ type: "activity", periodStart: month.start, periodEnd: month.end });
   }
 
   if (plan === "premium") {

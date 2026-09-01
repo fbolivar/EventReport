@@ -11,7 +11,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "node --test src/engine.test.ts"
+    "test": "node --test src/engine.test.ts src/diff.test.ts"
   },
   "dependencies": {
     "@eventreport/schema": "workspace:*"

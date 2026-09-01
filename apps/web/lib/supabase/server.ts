@@ -1,7 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 import { scheduledClient } from "@/lib/supabase/scheduled";
+import { tenantScoped } from "@/lib/supabase/tenant-scope";
 import type { Database } from "@/lib/supabase/types";
 
 /**
@@ -19,7 +20,7 @@ export async function createClient() {
 
   const cookieStore = await cookies();
 
-  return createServerClient<Database>(
+  const client = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -40,4 +41,14 @@ export async function createClient() {
       },
     },
   );
+
+  // Dentro del portal de una empresa, cada consulta se acota a ella. RLS sigue
+  // siendo la frontera de seguridad; esto es la frontera de **corrección**: un
+  // usuario con acceso a varias empresas no debe ver la suma de todas en el
+  // portal de una, ni recibir un informe con hallazgos de otro cliente.
+  const slug = (await headers()).get("x-tenant-slug");
+  if (!slug) return client;
+
+  const { data } = await client.from("tenants").select("id").eq("slug", slug).maybeSingle();
+  return data?.id ? tenantScoped(client, data.id) : client;
 }
