@@ -38,10 +38,9 @@ export function windowsInstaller({
   downloadUrl,
   tenantName,
 }: InstallerInput): string {
-  // ProgramData y no LOCALAPPDATA: el instalador se eleva, así que
-  // LOCALAPPDATA sería el del administrador y no el del técnico; y el colector
-  // corre como SYSTEM cuando arranca con la máquina. Una ruta de máquina es la
-  // única que significa lo mismo para los tres.
+// ProgramData y no LOCALAPPDATA: el colector corre como SYSTEM cuando arranca
+  // con la máquina, y una ruta de máquina es la única que significa lo mismo
+  // para el técnico y para el servicio.
   const destino = `%ProgramData%${BACKSLASH}EventReport`;
 
   return [
@@ -49,15 +48,12 @@ export function windowsInstaller({
     "setlocal",
     "chcp 65001 > nul",
     "",
-    ":: Se eleva solo. Instalar el arranque automático necesita administrador, y",
-    ":: pedirlo aquí evita que el técnico llegue al final del asistente y ahí se",
-    ":: entere de que tiene que empezar de nuevo.",
-    'net session >nul 2>&1',
-    "if errorlevel 1 (",
-    "  echo   Pidiendo permisos de administrador...",
-    `  powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"`,
-    "  exit /b",
-    ")",
+    ":: NO se eleva aquí, a propósito.",
+    ":: Un proceso elevado corre en otro contexto de usuario y puede perder la",
+    ":: VPN con la que el técnico llega al firewall — NetExtender y otros",
+    ":: clientes montan el túnel por usuario. El asistente tiene que hablar con",
+    ":: el equipo, así que corre como quien lo instala; los permisos de",
+    ":: administrador se piden solo al final, para dejarlo arrancando solo.",
     "",
     `title Instalacion de EventReport - ${tenantName}`,
     "echo.",

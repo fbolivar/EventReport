@@ -11,6 +11,7 @@ package service
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -19,10 +20,29 @@ import (
 // Name es como aparece en el programador de tareas del cliente.
 const Name = "EventReport Collector"
 
-// Install registra el arranque automático. Requiere administrador.
+// IsAdmin dice si este proceso puede registrar tareas de máquina.
+func IsAdmin() bool {
+	if runtime.GOOS != "windows" {
+		return os.Geteuid() == 0
+	}
+	// `net session` solo funciona con privilegios administrativos: es la
+	// comprobación que usa medio Windows y no necesita dependencias.
+	return exec.Command("net", "session").Run() == nil
+}
+
+// Install registra el arranque automático.
+//
+// Si el proceso no es administrador, se relanza a sí mismo con UAC **solo para
+// este paso**. El asistente corre sin elevar a propósito: un proceso elevado
+// puede perder la VPN por la que el técnico llega al firewall, porque clientes
+// como NetExtender montan el túnel por usuario.
 func Install(binary, configPath string) error {
 	if runtime.GOOS != "windows" {
 		return fmt.Errorf("por ahora solo Windows; en Linux se instala como unidad de systemd (ver la guía)")
+	}
+
+	if !IsAdmin() {
+		return elevate(binary, configPath)
 	}
 
 	command := fmt.Sprintf(`"%s" run -config "%s"`, binary, configPath)
@@ -72,6 +92,30 @@ func Installed() bool {
 	}
 	_, err := run("schtasks", "/query", "/tn", Name)
 	return err == nil
+}
+
+// elevate vuelve a lanzar este mismo programa con UAC para instalar la tarea.
+//
+// Windows muestra el aviso; si el técnico lo rechaza, el mensaje lo dice en
+// esos términos y no en los de un código de error.
+func elevate(binary, configPath string) error {
+	arguments := fmt.Sprintf("'service','install','-config','%s'", configPath)
+	script := fmt.Sprintf(
+		"Start-Process -FilePath '%s' -ArgumentList %s -Verb RunAs -Wait -WindowStyle Hidden",
+		binary, arguments,
+	)
+
+	if output, err := run("powershell", "-NoProfile", "-Command", script); err != nil {
+		if strings.Contains(output, "canceled") || strings.Contains(output, "cancelada") {
+			return fmt.Errorf("Windows pidió permiso de administrador y se canceló; vuelve a intentarlo y acepta")
+		}
+		return fmt.Errorf("no se pudo pedir permiso de administrador: %s", strings.TrimSpace(output))
+	}
+
+	if !Installed() {
+		return fmt.Errorf("Windows no autorizó la instalación; acepta el aviso de administrador y vuelve a intentar")
+	}
+	return nil
 }
 
 func run(name string, args ...string) (string, error) {

@@ -1059,3 +1059,18 @@ para ver actividad y eventos."*
 
 **Regla:** cuando el producto no puede mostrar algo porque falta un paso del cliente, lo dice en
 el sitio donde se nota la ausencia.
+
+#### Elevar el instalador rompió el acceso al firewall
+
+Al añadir el arranque automático hice que el instalador pidiera administrador **al principio**.
+Parecía cortés —resolver los permisos de una vez— y rompió la instalación real: un proceso
+elevado corre en otro contexto de usuario, y los clientes de VPN como SonicWall NetExtender
+montan el túnel **por usuario**. Elevado, el asistente dejaba de alcanzar el firewall al que el
+técnico sí llegaba desde su sesión. El síntoma en el cliente fue "no deja probar ni conectar".
+
+El asistente vuelve a correr sin elevar, y el permiso se pide **solo en el último paso**: el botón
+"Instalar como servicio" se relanza a sí mismo con UAC. Windows muestra el aviso una vez, cuando
+hace falta y para lo que hace falta.
+
+**Regla:** pedir privilegios antes de necesitarlos no es prolijidad, es cambiar el entorno de todo
+lo que viene después. Se eleva lo que necesita elevación, y nada más.
