@@ -662,3 +662,27 @@ no se estaba ejecutando.
 **Regla:** si un cambio en código de servidor parece no surtir efecto, lo primero es reiniciar
 `pnpm dev` y volver a probar; recién después se depura el código. Y para confirmar que una rama
 nueva se ejecuta, un rastro que se pueda ver vale más que mirar el resultado.
+
+## Bloque 13 — Actividad de red
+
+El informe más barato de construir —los rollups ya estaban— y el que completa el plan estándar
+(§10). Dos páginas: cifras del período con el reparto por hora del día, y el detalle con los
+top-N y la tabla diaria.
+
+- **Las horas se dibujan con barras de `View`**, no con un gráfico: react-pdf no tiene canvas, y
+  una barra de ancho proporcional se lee igual e imprime bien en blanco y negro.
+- El texto explica por qué mirar las horas: actividad a las tres de la mañana es la señal, no el
+  total del día.
+- **Una dimensión sin datos no se imprime.** Una tabla vacía en un informe hace dudar de todas las
+  demás.
+- El informe repite, en su propia página, que las líneas de registro se quedan en la red del
+  cliente: dice cuánto y de qué tipo, nunca quién visitó qué. Esa frontera es del producto (§4), y
+  el documento que llega al cliente es donde tiene que verse.
+
+#### Auto-blindaje: el número de páginas era una estimación
+
+Cada tipo de informe calculaba sus páginas con una división —`1 + ceil(items / 4)`— y la ficha del
+portal decía "2 páginas" en un PDF de 3. Un dato que el usuario puede desmentir abriendo el
+archivo. Ahora `countPages()` cuenta los objetos `/Type /Page` del PDF ya renderizado, una sola
+vez para todos los tipos. **Regla:** si el dato está en el artefacto, se lee del artefacto; no se
+estima.

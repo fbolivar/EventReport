@@ -4,6 +4,7 @@ import { ActivityChart, HourProfileChart } from "@/components/app/activity/activ
 import { TopList } from "@/components/app/activity/top-list";
 import { FilterLinks } from "@/components/app/shell/filter-links";
 import { PageHeader } from "@/components/app/shell/page-header";
+import { GenerateReportButton } from "../reports/generate-button";
 import { Surface, SurfaceBody, SurfaceHeader } from "@/components/shared/surface";
 import { Value } from "@/components/shared/value";
 import { TOPN_DIMENSION_LABELS } from "@/content/labels";
@@ -58,14 +59,22 @@ export default async function ActivityPage({
         title="Actividad"
         meta="Agregados por hora que envía el colector. Las líneas crudas se quedan en tu red."
         action={
-          <FilterLinks
-            label="Rango"
-            param="range"
-            basePath={`/${tenantId}/activity`}
-            searchParams={{}}
-            current={String(days)}
-            options={RANGES}
-          />
+          <div className="flex flex-wrap items-center gap-4">
+            <GenerateReportButton
+              tenantId={tenantId}
+              type="activity"
+              label="Informe de actividad"
+              variant="secondary"
+            />
+            <FilterLinks
+              label="Rango"
+              param="range"
+              basePath={`/${tenantId}/activity`}
+              searchParams={{}}
+              current={String(days)}
+              options={RANGES}
+            />
+          </div>
         }
       />
 
