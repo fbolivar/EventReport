@@ -342,6 +342,39 @@ ilustración.
   de pnpm. Copiar es mejor que duplicar, porque la copia se genera y nunca se edita: el motor que
   corre en la nube es el mismo byte a byte que cubren las pruebas.
 
+### Bloque 7 — colector en Go, fase 1 (2026-09-01)
+
+- **Sin dependencias externas**: solo biblioteca estándar. El colector se instala en la máquina
+  de un cliente que no controlamos; cada dependencia es una superficie más que auditar y una
+  actualización más que empujar. PBKDF2 y Ed25519 ya vienen en Go 1.24+.
+- **La línea cruda se escribe en la bóveda antes de parsearla.** Un formato que el adaptador no
+  reconoce no se pierde: queda en disco y se cuenta como calidad del dato.
+- **La cola es finita a propósito** (50.000 líneas): quedarse atrás no puede convertirse en
+  memoria creciente en una máquina del cliente. `push` nunca bloquea, y lo descartado se cuenta.
+- El adaptador es la **única** pieza que menciona una marca. Si agregar un fabricante obligara a
+  tocar el agregador, las reglas o el portal, el modelo normalizado estaría mal (§12, fase 4).
+- 8 paquetes con pruebas, incluida una de punta a punta que levanta el receptor, envía syslog real
+  por UDP y comprueba que lo que queda listo para subir es el agregado **y que ninguna línea cruda
+  aparece en él**.
+
+#### Auto-blindaje: la prueba de punta a punta encontró una desviación del diseño
+
+El agregador agrupaba por la marca de tiempo del equipo. El §6.6 dice agrupar **por hora de
+recepción**, y con razón: un firewall con el reloj corrido reparte su tráfico entre horas que
+nunca cierran, y el informe muestra huecos que no existen. Se detectó porque la prueba de punta a
+punta mezcló líneas con fecha del equipo (10:15) recibidas a la hora real, y el conteo de líneas
+no reconocidas quedó en otra hora.
+
+Corregido: se agrupa por recepción y la diferencia entre relojes viaja como desfase, que es
+justamente lo que mira FW-015. Una prueba nueva lo fija.
+
+#### Auto-blindaje: un archivo a medio escribir no puede parecer un envío pendiente
+
+El buffer nombra los archivos temporales con punto inicial y los renombra al terminar, pero
+`List()` filtraba solo por extensión: un `.tmp` interrumpido seguía terminando en `.json` y
+aparecía como pendiente, listo para subirse a medias. Lo encontró la prueba que simula un corte
+de energía a mitad de escritura.
+
 #### Auto-blindaje: un score que toca fondo deja de informar
 
 La primera fórmula restaba una penalización lineal (`peso / superficie`). Al probarla contra un
