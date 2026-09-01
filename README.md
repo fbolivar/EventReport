@@ -33,6 +33,19 @@ cp .env.example apps/web/.env.local   # completar con las claves del proyecto Su
 pnpm dev                              # http://localhost:3000
 ```
 
+## Supabase
+
+Proyecto de desarrollo: `eventreport` · ref `xhprvnpmyrwsxdzhprqu` · región `us-east-1`,
+organización `bc-fabric-sas`.
+
+```bash
+node supabase/seed/generate.mjs   # regenera seed.sql desde apps/web/lib/fixtures
+```
+
+Las migraciones de `supabase/migrations/` están aplicadas. Toda tabla con datos de cliente lleva
+`tenant_id` y RLS; los catálogos globales (reglas, marcos, controles) llevan RLS de solo lectura.
+Las escrituras de telemetría entran por Edge Functions con `service_role`, nunca desde el navegador.
+
 ## Comprobaciones antes de un PR
 
 ```bash

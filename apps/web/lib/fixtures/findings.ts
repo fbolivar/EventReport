@@ -291,10 +291,10 @@ export const DEMO_REMEDIATIONS: RuleRemediation[] = [
     ruleCode: "FW-001",
     brand: "fortigate",
     steps: [
-      "Entra a Network › Interfaces y abre wan1.",
+      "Entra a Network › Interfaces y abre la interfaz WAN señalada en el hallazgo.",
       "En Administrative Access desmarca HTTPS, SSH y PING.",
       "Si necesitas administrar desde fuera, deja solo HTTPS y agrega las IP de administración en System › Admin › Trusted Hosts.",
-      "Confirma por CLI: config system interface, edit wan1, unset allowaccess.",
+      "Confirma por CLI: config system interface, edit <interfaz>, unset allowaccess.",
     ],
   },
   {
@@ -311,7 +311,7 @@ export const DEMO_REMEDIATIONS: RuleRemediation[] = [
     ruleCode: "FW-006",
     brand: "fortigate",
     steps: [
-      "Abre Policy & Objects › Firewall Policy y localiza la política 3.",
+      "Abre Policy & Objects › Firewall Policy y localiza la política señalada en el hallazgo.",
       "Reemplaza el origen y el destino any por los grupos de direcciones reales.",
       "Cambia el servicio ALL por los puertos que la aplicación necesita.",
       "Deja la política deshabilitada un día y revisa el contador de aciertos antes de borrarla.",
@@ -321,9 +321,9 @@ export const DEMO_REMEDIATIONS: RuleRemediation[] = [
     ruleCode: "FW-009",
     brand: "sophos_xg",
     steps: [
-      "Entra a Rules and policies › Firewall rules y abre la regla 7.",
+      "Entra a Rules and policies › Firewall rules y abre la regla señalada en el hallazgo.",
       "En Security features activa IPS, protección web y control de aplicaciones.",
-      "Selecciona los perfiles predeterminados de la política de la planta.",
+      "Selecciona los perfiles predeterminados de tu política de salida.",
       "Verifica el consumo de CPU la primera hora: la inspección agrega carga.",
     ],
   },
