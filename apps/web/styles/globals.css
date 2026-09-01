@@ -117,7 +117,45 @@
   }
 }
 
+/**
+ * The single orchestrated sequence of the site: the hero report builds itself
+ * out of events (log lines -> counters -> finding -> score). Runs once, on
+ * load, and nowhere else. Reduced motion gets the final state.
+ */
+@keyframes er-build-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @layer utilities {
+  .er-build {
+    animation: er-build-in var(--er-duration-slow) var(--er-ease) both;
+  }
+  .er-build-1 {
+    animation-delay: 80ms;
+  }
+  .er-build-2 {
+    animation-delay: 240ms;
+  }
+  .er-build-3 {
+    animation-delay: 400ms;
+  }
+  .er-build-4 {
+    animation-delay: 620ms;
+  }
+  .er-build-5 {
+    animation-delay: 900ms;
+  }
+  .er-build-6 {
+    animation-delay: 1180ms;
+  }
+
   /* Literal values read from the firewall: IPs, rule ids, hashes, log lines. */
   .value {
     font-family: var(--er-font-mono);
