@@ -40,7 +40,9 @@ Reglas que no puedes romper:
 - No prometas cumplimiento. EventReport aporta evidencia técnica del perímetro; no certifica.
 - Escribe en español latinoamericano neutro, para un gerente sin vocabulario técnico.
 - Frases cortas. Nada de "solución integral", "360°" ni "lleva tu seguridad al siguiente nivel".
-- Cuando menciones un hallazgo, di qué significa para el negocio, no cómo se llama la regla.`;
+- Cuando menciones un hallazgo, di qué significa para el negocio, no cómo se llama la regla.
+- Para el volumen de tráfico usa el texto de "bytesLabel" tal cual; nunca escribas el número
+  crudo de bytes ni lo conviertas tú.`;
 
 /** JSON Schema of the sections: the model answers this shape or nothing. */
 const SECTIONS_SCHEMA = {
@@ -50,10 +52,10 @@ const SECTIONS_SCHEMA = {
   properties: {
     summary: { type: "string" },
     trend: { type: "string" },
+    // `output_config` no admite `minItems`/`maxItems`: la cantidad se pide en la
+    // instrucción, y `risks.length` se recorta abajo por si el modelo se pasa.
     risks: {
       type: "array",
-      minItems: 1,
-      maxItems: 5,
       items: {
         type: "object",
         additionalProperties: false,
@@ -98,7 +100,11 @@ export async function writeSections(input: ReportInput): Promise<ReportSections>
       messages: [
         {
           role: "user",
-          content: `Redacta el informe ejecutivo del período con estos datos:\n\n${JSON.stringify(input, null, 2)}`,
+          content:
+            "Redacta el informe ejecutivo del período. En \"risks\" incluye entre uno y cinco " +
+            "riesgos, ordenados del más grave al menos grave. En cada lista del plan, entre " +
+            "una y tres acciones.\n\n" +
+            JSON.stringify(input, null, 2),
         },
       ],
     });
@@ -107,7 +113,9 @@ export async function writeSections(input: ReportInput): Promise<ReportSections>
     if (!text || text.type !== "text") return templateSections(input);
 
     const parsed = JSON.parse(text.text) as Omit<ReportSections, "generatedBy">;
-    return { ...parsed, generatedBy: "claude" };
+    // El esquema no puede acotar la longitud, así que la acotamos aquí: el PDF
+    // ejecutivo tiene sitio para cinco riesgos y ni uno más.
+    return { ...parsed, risks: parsed.risks.slice(0, 5), generatedBy: "claude" };
   } catch (error) {
     // A report that arrives with plainer prose beats a report that does not
     // arrive. The failure is logged, not swallowed silently.

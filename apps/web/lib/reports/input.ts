@@ -6,6 +6,7 @@ import { assessmentsFor, listFrameworks } from "@/lib/data/compliance";
 import { countsBySeverity, listFindings, rulesByCode } from "@/lib/data/findings";
 import { listCriticalEvents, postureScore, postureTrend } from "@/lib/data/posture";
 import { getTenant, listFirewalls } from "@/lib/data/tenant";
+import { formatBytes } from "@/lib/utils/format";
 
 /**
  * The structured input of the report pipeline (docs/diseno-tecnico.md §8).
@@ -38,6 +39,12 @@ export interface ReportInput {
     blockedIps: number;
     blockedWeb: number;
     bytes: number;
+    /**
+     * El mismo volumen ya legible ("812 GB"). Convertir bytes es calcular, y el
+     * modelo no calcula: si solo recibe el número crudo lo escribe tal cual y
+     * el informe dice "812.000.000.000 bytes".
+     */
+    bytesLabel: string;
   };
   compliance: Array<{
     framework: string;
@@ -148,7 +155,7 @@ export async function buildReportInput(
       resolvedInPeriod: resolvedInPeriod.length,
       top,
     },
-    activity,
+    activity: { ...activity, bytesLabel: formatBytes(activity.bytes) },
     compliance,
     criticalEvents: events.map((event) => ({
       ts: event.ts,
