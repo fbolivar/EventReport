@@ -581,3 +581,31 @@ está disponible, y tampoco se puede esconder: ahora dice "16 disponibles · 1 f
 con la URL y el secreto en Vault. **No está aplicado**: apunta a una URL que todavía no existe, y
 un cron llamando al vacío solo llenaría el registro de fallos. Se aplica el día del despliegue.
 Falta también el correo: hoy el informe aparece en el portal, no llega a la bandeja del gerente.
+
+#### Validación del catálogo de remediación (2026-09-01)
+
+Las rutas de menú se contrastaron una por una contra la documentación oficial —`docs.fortinet.com`
+para FortiOS 7.4 y `docs.sophos.com` para SFOS 20.0—, no contra la memoria de nadie. Siete rutas
+estaban mal o desactualizadas:
+
+| Regla | Marca | Decía | Dice |
+|---|---|---|---|
+| FW-005 | FortiGate | System > Configuration > Backup | Menú del usuario (arriba a la derecha) > Configuration > Backup |
+| FW-011 | FortiGate | User & Authentication > FortiToken | FortiTokens para el inventario; User Definition para asignar |
+| FW-016 | FortiGate | Dashboard > Licenses | Widget de licencias en Dashboard > Status, o System > FortiGuard |
+| FW-002 | Sophos | Authentication > One-time password | Authentication > Multi-factor authentication (MFA) |
+| FW-011 | Sophos | Authentication > One-time password | Authentication > Multi-factor authentication (MFA) |
+| FW-004 | Sophos | Administration > Device access > Profiles | Profiles > Device access |
+| FW-017 | Sophos | Configure > System services > Log settings | System services > Log settings |
+
+En SFOS 20 el módulo dejó de llamarse "One-time password" y pasó a ser "Multi-factor
+authentication (MFA)"; la MFA del administrador sigue activándose en Administration > Device
+access, eso sí era correcto. El resto de rutas quedó confirmado: System > Administrators con
+"Restrict login to trusted hosts" y "Enable Two-factor Authentication", Policy & Objects >
+Firewall Policy con Hit Count, Administration > SNMP / Time / Licensing, Profiles > Device access,
+Hosts and services > Country group, System services > High availability y Log settings, Backup and
+firmware > Backup & restore.
+
+**Regla:** una ruta de menú es un dato con versión, no una constante. Cada vez que se agregue una
+marca o se suba una versión mayor de firmware, el catálogo se revisa contra la documentación del
+fabricante y la fecha de la revisión queda escrita aquí.

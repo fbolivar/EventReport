@@ -301,8 +301,8 @@ export const DEMO_REMEDIATIONS: RuleRemediation[] = [
     ruleCode: "FW-011",
     brand: "fortigate",
     steps: [
-      "Crea el servidor de segundo factor en User & Authentication › FortiToken o RADIUS.",
-      "Asigna el token a cada usuario del grupo de VPN.",
+      "Registra los tokens en User & Authentication > FortiTokens, o configura un servidor RADIUS con MFA.",
+      "Asigna el token a cada usuario del grupo de VPN en User & Authentication > User Definition, con Two-factor Authentication activado.",
       "En VPN › SSL-VPN Settings exige el grupo con MFA en Authentication/Portal Mapping.",
       "Prueba con una cuenta antes de cerrar el acceso al resto.",
     ],
@@ -372,7 +372,7 @@ export const DEMO_REMEDIATIONS: RuleRemediation[] = [
     steps: [
       "Consulta la versión instalada en Dashboard > Status y compárala con el ciclo de vida publicado por Fortinet.",
       "Descarga la versión estable recomendada para tu modelo desde el portal de soporte de Fortinet.",
-      "Respalda la configuración en System > Configuration > Backup y programa ventana de mantenimiento.",
+      "Respalda la configuración desde el menú de tu usuario, arriba a la derecha: Configuration > Backup. Programa ventana de mantenimiento.",
       "Sigue la ruta de actualización oficial: saltar versiones puede corromper la configuración.",
     ],
   },
@@ -460,7 +460,7 @@ export const DEMO_REMEDIATIONS: RuleRemediation[] = [
     ruleCode: "FW-016",
     brand: "fortigate",
     steps: [
-      "Revisa Dashboard > Licenses y anota qué servicio está vencido o por vencer.",
+      "Revisa el widget de licencias en Dashboard > Status, o System > FortiGuard, y anota qué servicio está vencido o por vencer.",
       "Renueva con el canal antes de la fecha: al vencer, IPS y antivirus dejan de actualizar firmas.",
       "Aplica la licencia en System > FortiGuard y fuerza Update Now.",
       "Verifica que la fecha de las firmas avance después de la renovación.",
@@ -560,8 +560,8 @@ export const DEMO_REMEDIATIONS: RuleRemediation[] = [
     ruleCode: "FW-002",
     brand: "sophos_xg",
     steps: [
-      "Entra a Authentication > One-time password y activa el servicio.",
-      "Marca a los administradores en Administration > Device access para exigir OTP.",
+      "Entra a Authentication > Multi-factor authentication (MFA) y activa el servicio.",
+      "Activa la MFA de las cuentas de administrador en Administration > Device access.",
       "Entrega el código QR a cada persona y verifica un inicio de sesión antes de forzarlo a todos.",
       "Deja una cuenta de emergencia documentada y guardada fuera del equipo.",
     ],
@@ -580,7 +580,7 @@ export const DEMO_REMEDIATIONS: RuleRemediation[] = [
     ruleCode: "FW-004",
     brand: "sophos_xg",
     steps: [
-      "Revisa Administration > Device access > Profiles y quién tiene perfil Administrator.",
+      "Revisa Profiles > Device access y quién tiene el perfil Administrator.",
       "Crea perfiles acotados con solo los módulos que cada rol necesita.",
       "Reasigna las cuentas sobrantes al perfil acotado en Authentication > Users.",
       "Documenta quién aprobó cada perfil total.",
@@ -592,7 +592,7 @@ export const DEMO_REMEDIATIONS: RuleRemediation[] = [
     steps: [
       "Revisa la versión en Control center y compárala con el ciclo de vida publicado por Sophos.",
       "Descarga la versión recomendada desde el portal de Sophos para tu modelo.",
-      "Respalda la configuración en Backup & firmware > Backup & restore antes de actualizar.",
+      "Respalda la configuración en Backup and firmware > Backup & restore antes de actualizar.",
       "Actualiza en ventana de mantenimiento y confirma que las suscripciones sigan activas después.",
     ],
   },
@@ -640,7 +640,7 @@ export const DEMO_REMEDIATIONS: RuleRemediation[] = [
     ruleCode: "FW-011",
     brand: "sophos_xg",
     steps: [
-      "Entra a Authentication > One-time password y activa OTP para el grupo de VPN.",
+      "Entra a Authentication > Multi-factor authentication (MFA) y exígela para el grupo de VPN.",
       "En VPN > SSL VPN remote access asigna solo grupos con OTP exigido.",
       "Entrega los códigos y prueba con una cuenta antes de aplicarlo a todos.",
       "Revisa el log de autenticación tras el cambio.",
@@ -690,7 +690,7 @@ export const DEMO_REMEDIATIONS: RuleRemediation[] = [
     ruleCode: "FW-017",
     brand: "sophos_xg",
     steps: [
-      "Entra a Configure > System services > Log settings y agrega un servidor syslog.",
+      "Entra a System services > Log settings y agrega un servidor syslog.",
       "Apunta el segundo destino fuera del firewall y fuera del colector.",
       "Selecciona los módulos que deben enviarse, no solo el firewall.",
       "Comprueba que llegan eventos a ambos destinos.",
