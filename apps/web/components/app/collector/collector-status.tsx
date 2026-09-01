@@ -53,6 +53,15 @@ export function CollectorStatus({
         </span>
       </div>
 
+      {health.eps === 0 && health.status !== "offline" ? (
+        // Un colector vivo con cero eventos por segundo no está roto: es que el
+        // firewall no le está enviando sus registros. Sin decirlo, el cliente ve
+        // "Actividad" vacía y culpa al producto.
+        <p className="mt-2 text-micro text-high">
+          No está llegando syslog. Apunta el firewall a este colector para ver actividad y eventos.
+        </p>
+      ) : null}
+
       <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">
         <Metric label="Eventos por segundo" value={health.eps.toLocaleString("es-CO")} />
         <Metric

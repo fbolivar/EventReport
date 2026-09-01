@@ -20,6 +20,8 @@ type Device interface {
 	Connect(ctx context.Context, host, token, passphrase string, insecure bool) (Identity, error)
 	// State describe lo que ya está hecho, para que la página no pregunte dos veces.
 	State() State
+	// InstallService deja el colector arrancando solo con la máquina.
+	InstallService() error
 }
 
 type Identity struct {
@@ -35,6 +37,9 @@ type State struct {
 	Tenant   string `json:"tenant"`
 	Device   string `json:"device"`
 	Host     string `json:"host"`
+	// Service dice si ya arranca solo: mientras no lo haga, cerrar la ventana
+	// apaga el colector, y eso hay que decirlo.
+	Service bool `json:"service"`
 }
 
 type request struct {
@@ -66,6 +71,19 @@ func Serve(ctx context.Context, addr string, device Device, logger *slog.Logger)
 
 	mux.HandleFunc("/api/state", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, device.State())
+	})
+
+	mux.HandleFunc("/api/service", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "método no permitido"})
+			return
+		}
+		if err := device.InstallService(); err != nil {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+			return
+		}
+		logger.Info("arranque automático instalado desde el asistente")
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 
 	mux.HandleFunc("/api/test", func(w http.ResponseWriter, r *http.Request) {

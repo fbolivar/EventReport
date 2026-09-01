@@ -103,6 +103,18 @@ const pageHTML = `<!doctype html>
 
     <p id="msg" class="msg"></p>
   </div>
+
+  <div class="card" id="servicio" hidden style="margin-top:1rem">
+    <p class="text"><b>Deja el colector instalado</b></p>
+    <p class="hint" style="margin-top:.35rem">
+      Así arranca solo con el equipo y sigue trabajando aunque cierres esta ventana o reinicies.
+      Sin esto, el colector se apaga al cerrar la consola.
+    </p>
+    <div class="row">
+      <button id="instalar">Instalar como servicio</button>
+    </div>
+    <p id="msg-servicio" class="msg"></p>
+  </div>
 </main>
 
 <script>
@@ -159,7 +171,8 @@ $("conectar").onclick = async () => {
     $("s2").className = "done";
     $("s3").className = "done";
     $("t2").textContent = "Firewall conectado: " + result.hostname;
-    $("t3").textContent = "Midiendo. Puedes cerrar el navegador.";
+    $("t3").textContent = "Midiendo.";
+    $("servicio").hidden = false;
     say(
       "Listo. El colector ya está midiendo: en unos minutos verás tu firewall en el portal.\n\n" +
         "Deja abierta la ventana negra de la instalación — ahí corre el colector.\n" +
@@ -172,6 +185,29 @@ $("conectar").onclick = async () => {
   }
 };
 
+$("instalar").onclick = async () => {
+  $("instalar").disabled = true;
+  const out = $("msg-servicio");
+  out.textContent = "Instalando…";
+  out.className = "msg";
+
+  try {
+    await call("/api/service", {});
+    out.textContent = "Listo: el colector arrancará solo con el equipo. Ya puedes cerrar todo.";
+    out.className = "msg ok";
+    $("instalar").hidden = true;
+  } catch (error) {
+    out.textContent =
+      String(error.message) +
+      "
+
+Cierra esta ventana, haz clic derecho sobre el instalador y elige " +
+      "«Ejecutar como administrador».";
+    out.className = "msg bad";
+    $("instalar").disabled = false;
+  }
+};
+
 fetch("/api/state").then((r) => r.json()).then((state) => {
   if (state.enrolled) {
     $("s1").className = "done";
@@ -181,6 +217,7 @@ fetch("/api/state").then((r) => r.json()).then((state) => {
     $("s2").className = "done";
     $("t2").textContent = "Firewall conectado: " + state.device;
     $("host").value = state.host || "";
+    if (!state.service) $("servicio").hidden = false;
   }
 });
 </script>

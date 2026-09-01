@@ -34,6 +34,7 @@ import (
 	"github.com/fbolivar/eventreport/collector/internal/buffer"
 	"github.com/fbolivar/eventreport/collector/internal/config"
 	"github.com/fbolivar/eventreport/collector/internal/pipeline"
+	"github.com/fbolivar/eventreport/collector/internal/service"
 	"github.com/fbolivar/eventreport/collector/internal/setup"
 	"github.com/fbolivar/eventreport/collector/internal/syslog"
 	"github.com/fbolivar/eventreport/collector/internal/transport"
@@ -49,6 +50,7 @@ Uso:
   collector setup -token <token> -url <url-supabase>     asistente en el navegador
   collector enroll -token <token> -url <url-supabase>   registra este colector
   collector device add -brand <marca> -host <url> -token <token>  registra un firewall
+  collector service install                              arranca solo con la máquina
   collector run                                          recibe, agrega y envía
   collector test                                         prueba la API del firewall
   collector vault -device <id> -from <fecha> -to <fecha> consulta la bóveda local
@@ -74,6 +76,8 @@ func main() {
 		err = runEnroll(args, logger)
 	case "run":
 		err = runCollector(args, logger)
+	case "service":
+		err = runService(args, logger)
 	case "setup":
 		err = runSetup(args, logger)
 	case "device":
@@ -311,6 +315,9 @@ type collectorDevice struct {
 	// started avisa una sola vez, con la frase de paso, para que el bucle del
 	// colector arranque en cuanto haya un equipo conectado.
 	started chan string
+	// passphrase es la última frase que el técnico demostró correcta; se sella
+	// solo si pide instalar el arranque automático.
+	passphrase string
 }
 
 func (c *collectorDevice) Test(ctx context.Context, host, token string, insecure bool) (setup.Identity, error) {
@@ -406,6 +413,8 @@ func (c *collectorDevice) Connect(ctx context.Context, host, token, passphrase s
 
 	// Arranca la medición sin bloquear la respuesta: el técnico ve "listo" y el
 	// primer snapshot sale en segundos, no en la próxima ronda.
+	c.passphrase = passphrase
+
 	// Sin `default`: cada equipo conectado tiene que reiniciar el bucle, y el
 	// canal tiene espacio para el aviso.
 	c.started <- passphrase
@@ -418,13 +427,41 @@ func (c *collectorDevice) Connect(ctx context.Context, host, token, passphrase s
 	}, nil
 }
 
+// InstallService deja el colector arrancando con la máquina y guarda la frase
+// sellada para que pueda abrir la credencial sin nadie delante.
+func (c *collectorDevice) InstallService() error {
+	binary, err := os.Executable()
+	if err != nil {
+		return err
+	}
+
+	absolute, err := filepath.Abs(c.path)
+	if err != nil {
+		return err
+	}
+
+	if c.passphrase != "" {
+		if err := config.SaveMachineKey(absolute, c.passphrase); err != nil {
+			return err
+		}
+	}
+
+	if err := service.Install(binary, absolute); err != nil {
+		// Si el arranque automático falla, la frase sellada no tiene por qué
+		// quedarse en el disco.
+		_ = config.RemoveMachineKey(absolute)
+		return err
+	}
+	return nil
+}
+
 func (c *collectorDevice) State() setup.State {
 	file, err := config.Load(c.path)
 	if err != nil {
 		return setup.State{}
 	}
 
-	state := setup.State{Enrolled: file.CollectorID != ""}
+	state := setup.State{Enrolled: file.CollectorID != "", Service: service.Installed()}
 	if len(file.Devices) > 0 {
 		state.Device = file.Devices[0].FirewallID
 		state.Host = file.Devices[0].Host
@@ -620,10 +657,74 @@ func runCollector(args []string, logger *slog.Logger) error {
 		return err
 	}
 
+	frase := *passphrase
+	if frase == "" {
+		// Instalado como servicio, no hay nadie para escribirla: se lee la que
+		// quedó sellada para esta máquina.
+		guardada, err := config.LoadMachineKey(*path)
+		if err != nil {
+			return err
+		}
+		frase = guardada
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	return collect(ctx, *path, *passphrase, logger)
+	return collect(ctx, *path, frase, logger)
+}
+
+// runService instala o quita el arranque automático.
+func runService(args []string, logger *slog.Logger) error {
+	if len(args) == 0 {
+		return fmt.Errorf("uso: collector service install|uninstall|status")
+	}
+
+	set := flag.NewFlagSet("service", flag.ExitOnError)
+	path := configFlag(set)
+	if err := set.Parse(args[1:]); err != nil {
+		return err
+	}
+
+	absolute, err := filepath.Abs(*path)
+	if err != nil {
+		return err
+	}
+
+	switch args[0] {
+	case "install":
+		binary, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		if err := service.Install(binary, absolute); err != nil {
+			return err
+		}
+		logger.Info("arranque automático instalado", "tarea", service.Name)
+		return nil
+
+	case "uninstall":
+		if err := service.Uninstall(); err != nil {
+			return err
+		}
+		// La frase sellada solo existe para arrancar sin nadie delante.
+		if err := config.RemoveMachineKey(absolute); err != nil {
+			return err
+		}
+		logger.Info("arranque automático retirado")
+		return nil
+
+	case "status":
+		if service.Installed() {
+			fmt.Println("el colector arranca solo con la máquina")
+		} else {
+			fmt.Println("el colector no está instalado como servicio")
+		}
+		return nil
+
+	default:
+		return fmt.Errorf("uso: collector service install|uninstall|status")
+	}
 }
 
 // collect es el bucle del colector: recibe, agrega, cierra horas y envía.

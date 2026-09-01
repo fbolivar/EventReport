@@ -1022,3 +1022,40 @@ Dos cambios, en el sitio que corresponde a cada uno:
 
 **Regla:** un estado transitorio tiene que decir cuándo termina. Si no se puede decir, no es un
 estado, es un problema.
+
+## Bloque 19 — El colector deja de depender de una ventana abierta
+
+Hasta aquí el colector moría al cerrar la consola: una demo, no una instalación. Ahora se puede
+dejar puesto en un cliente.
+
+**Arranque automático con `schtasks`, no con el SCM.** Un servicio de verdad obliga a hablar el
+protocolo del Service Control Manager, y eso exige una dependencia externa. El colector es de
+biblioteca estándar a propósito (§6.1): lo que se instala en la red de un cliente se audita mejor
+cuanto menos trae dentro. Una tarea al arranque cumple lo que importa —se levanta sola, sobrevive
+a reinicios, no necesita que nadie inicie sesión— y se quita con un comando.
+
+**La frase de paso, sellada con DPAPI de máquina.** Para arrancar sin nadie delante, el colector
+tiene que abrir la credencial del firewall solo. Guardar la frase en texto plano sería regalar el
+token a quien copie la carpeta; sellada con DPAPI en ámbito de máquina, **el archivo no sirve en
+otro equipo**. Quien tenga administrador local puede abrirlo, pero esa persona ya podía leer la
+configuración y ejecutar el colector: no se pierde nada que no estuviera perdido. Fuera de Windows
+no hay DPAPI y la protección real son los permisos `0600` del archivo; está dicho así en el
+código y en la guía, sin fingir que es cifrado.
+
+**El instalador se eleva solo.** Pedir administrador al final, cuando el técnico ya llenó todo,
+es hacerle empezar de nuevo. El `.cmd` comprueba `net session` y se relanza con UAC antes de
+tocar nada.
+
+**La configuración vive en `%ProgramData%`, no en `%LOCALAPPDATA%`.** Con elevación, LOCALAPPDATA
+es el del administrador y no el del técnico; y el colector corre como SYSTEM al arrancar con la
+máquina. Una ruta de máquina es la única que significa lo mismo para los tres.
+
+#### "Actividad" vacía sin explicar por qué
+
+Un colector vivo con cero eventos por segundo no está roto: es que el firewall no le envía sus
+registros. Sin decirlo, el cliente ve la pantalla de Actividad en blanco y culpa al producto. La
+tarjeta del colector ahora avisa: *"No está llegando syslog. Apunta el firewall a este colector
+para ver actividad y eventos."*
+
+**Regla:** cuando el producto no puede mostrar algo porque falta un paso del cliente, lo dice en
+el sitio donde se nota la ausencia.
