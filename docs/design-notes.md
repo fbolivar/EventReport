@@ -1107,3 +1107,23 @@ medias cuando uno falla —y una empresa sin cupos rechaza la primera ingesta si
 **Regla de todo el bloque:** cuando el producto depende de un dato que solo él conoce —una IP, un
 puerto, un estado—, decirlo es parte del trabajo. Y cuando no lo conoce, decir que no lo conoce,
 en vez de poner un ejemplo que alguien copiará.
+
+#### Dos cosas que estaban hechas y no se podían usar
+
+**La vista de clientes no estaba en el menú.** Existía en `/mssp` desde el bloque 14 y había que
+escribir la dirección a mano. Un proveedor entra y sale de sus empresas todo el día. Ahora aparece
+en la barra —solo para quien administra más de una empresa: a un cliente con una sola, una vista
+de "clientes" no le dice nada—.
+
+Eso obligó a un cliente **sin acotar** a la empresa de la URL: la pregunta es justamente "cuántas
+empresas ve este usuario", y el cliente acotado siempre respondería una. Se llama
+`createUnscopedClient` para que aparezca en cualquier búsqueda: usarlo dentro del portal de un
+cliente es el error que el acotado evita.
+
+**El modo medición no se podía terminar.** Las 24 h son una recomendación, no una condena: quien
+instala sabe si su cliente puede esperar un día. Un ámbar de 24 horas sin nada que hacer al
+respecto se lee como avería. Ahora hay "Empezar a vigilar ahora", y el latido respeta esa decisión
+en vez de devolver el colector a medición.
+
+**Regla:** una función que existe pero no tiene camino en la interfaz no existe. Y un estado que
+el usuario no puede cambiar tiene que explicarse solo.

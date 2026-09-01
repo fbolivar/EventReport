@@ -1,7 +1,7 @@
 import { cache } from "react";
 import type { Capabilities, Collector, Firewall, Site, Tenant, TenantMember } from "@eventreport/schema";
 
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createUnscopedClient } from "@/lib/supabase/server";
 import type { Database, Json } from "@/lib/supabase/types";
 
 type FirewallRow = Database["public"]["Tables"]["firewalls"]["Row"];
@@ -229,4 +229,21 @@ export const listPendingEnrolments = cache(async (): Promise<PendingEnrolment[]>
     label: row.label ?? undefined,
     expiresAt: row.expires_at,
   }));
+});
+
+/**
+ * Cuántas empresas ve este usuario.
+ *
+ * La consulta no lleva filtro: RLS devuelve exactamente aquellas de las que es
+ * miembro. Se usa para decidir si mostrar la vista de cartera, que a un cliente
+ * con una sola empresa no le dice nada.
+ */
+export const listAccessibleTenants = cache(async (): Promise<number> => {
+  // Sin acotar a propósito: la pregunta es justamente "¿cuántas empresas ve
+  // este usuario?", y el cliente acotado siempre respondería una.
+  const supabase = await createUnscopedClient();
+  const { count } = await supabase
+    .from("tenants")
+    .select("id", { count: "exact", head: true });
+  return count ?? 0;
 });

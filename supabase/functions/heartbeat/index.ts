@@ -65,6 +65,8 @@ Deno.serve(
       .eq("id", context.collectorId)
       .maybeSingle();
 
+    // Si el operador ya lo activó a mano desde el portal, el latido no lo
+    // devuelve a medición: la decisión de una persona pesa más que el reloj.
     const measuringSince = current?.created_at ? Date.parse(current.created_at) : Date.now();
     const stillMeasuring = Date.now() - measuringSince < 24 * 60 * 60 * 1000;
     const status = current?.status === "measuring" && stillMeasuring ? "measuring" : "active";

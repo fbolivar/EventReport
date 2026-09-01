@@ -147,3 +147,33 @@ export async function removeCollector(
   revalidatePath(`/${tenantSlug}/settings`);
   return {};
 }
+
+/**
+ * Termina el modo medición antes de las 24 h.
+ *
+ * El período existe para conocer el tráfico normal antes de alertar (§5), pero
+ * es una recomendación, no una condena: quien instala sabe si su cliente puede
+ * esperar un día. Sin este botón, un ámbar de 24 horas se lee como avería y
+ * nadie puede hacer nada al respecto.
+ */
+export async function startWatching(
+  _previous: EnrolmentState,
+  formData: FormData,
+): Promise<EnrolmentState> {
+  const tenantSlug = String(formData.get("tenant") ?? "");
+  const collectorId = String(formData.get("collector") ?? "");
+  if (!tenantSlug || !collectorId) return { error: "Falta el colector." };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("collectors")
+    .update({ status: "active" })
+    .eq("id", collectorId)
+    .eq("status", "measuring");
+
+  if (error) return { error: "No pudimos cambiar el estado del colector." };
+
+  revalidatePath(`/${tenantSlug}/settings`);
+  revalidatePath(`/${tenantSlug}/dashboard`);
+  return {};
+}

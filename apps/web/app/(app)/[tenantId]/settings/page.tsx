@@ -168,7 +168,11 @@ export default async function SettingsPage({
                       Último contacto {formatSince(collector.health.lastSeenAt, now)} · bóveda de{" "}
                       <Value>{collector.health.vaultDays}</Value> días
                     </p>
-                    <RemoveCollector tenantId={tenantId} collectorId={collector.id} />
+                    <RemoveCollector
+                      tenantId={tenantId}
+                      collectorId={collector.id}
+                      measuring={collector.health.status === "measuring"}
+                    />
                   </li>
                 );
               })}
