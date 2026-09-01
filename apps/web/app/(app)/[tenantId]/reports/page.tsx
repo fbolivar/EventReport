@@ -48,7 +48,17 @@ export default async function ReportsPage({
       <PageHeader
         title="Informes"
         meta="Se generan solos según tu plan; también puedes pedirlos cuando quieras."
-        action={<GenerateReportButton tenantId={tenantId} />}
+        action={
+          <div className="flex flex-wrap items-center gap-3">
+            <GenerateReportButton
+              tenantId={tenantId}
+              type="hardening"
+              label="Hardening"
+              variant="secondary"
+            />
+            <GenerateReportButton tenantId={tenantId} label="Ejecutivo" />
+          </div>
+        }
       />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">

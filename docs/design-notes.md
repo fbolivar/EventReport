@@ -475,3 +475,43 @@ justificación y reabierto, control 5.25 fuera de alcance (8 cumplen → 7, 1 fu
 invitación registrada y visible como pendiente, informe generado (2 páginas, 7 KB) y descargado
 como `application/pdf` con cabecera `%PDF-1.3`. `scrollWidth === clientWidth` a 390, 820 y 1440.
 El estado del seed se restauró después de probar.
+
+## Bloque 10 — Entrega del informe
+
+Dos cambios, uno de comportamiento y otro de contenido.
+
+**El trabajo sale del clic.** `requestReport` inserta la fila en `generating`, responde y sigue
+en `after()` de `next/server`. Generar tardaba 117 s con el botón bloqueado; ahora responde en
+1,7 s y el estado se ve en la lista. El precio es que el usuario tiene que volver: por eso la
+fila existe desde el primer instante y cualquier fallo la marca `failed`, nunca la deja colgada
+en "Generando…". **Regla:** al desplegar en Vercel hay que fijar `maxDuration` en la ruta; una
+función que muere a los 60 s deja informes a medio hacer.
+
+**El informe de hardening existe.** Antes el botón de la página de hallazgos era un enlace a
+`/reports` que no generaba nada: prometía un informe que no había. Ahora `buildHardeningInput` +
+`HardeningReport` producen el PDF con todos los hallazgos abiertos, su evidencia y los pasos de
+la marca. Aquí **no interviene el modelo**: los pasos vienen del catálogo tal como están escritos,
+porque un procedimiento que cambia de redacción entre dos informes no se puede auditar ni seguir.
+
+#### El catálogo de remediación estaba casi vacío
+
+De los 12 hallazgos abiertos, solo 4 tenían pasos: el PDF decía "todavía no tenemos los pasos de
+esta marca" en 8 de 12. El informe se veía bien y no servía para nada. Se completaron las 24
+reglas × 2 marcas (48 entradas, `20260901160000_remediation_catalog.sql`). **Pendiente de
+validación:** las rutas de menú son de FortiOS 7.x y Sophos XG v20 y hay que contrastarlas contra
+el firmware exacto antes de vender el informe; el hallazgo y la evidencia son correctos aunque la
+ruta cambie de nombre entre versiones.
+
+#### Auto-blindaje: el PDF cambiaba caracteres en silencio
+
+La evidencia "any → any" se imprimía como "any ’ any". `@react-pdf/renderer` usa Helvetica con
+codificación WinAnsi; un carácter fuera de esa tabla no falla, se sustituye por otro glifo. Es el
+peor tipo de error en un documento de evidencia: el PDF se ve bien y dice algo distinto de lo que
+el firewall tiene configurado.
+
+Se detectó descomprimiendo los flujos del PDF y leyendo los bytes reales, no mirando el
+documento. Arreglo: `pdfText()` en `lib/reports/pdf-theme.ts` traduce los símbolos conocidos
+(→ ⇒ ≥ ✓…) y reemplaza por guion lo que WinAnsi no puede dibujar. **Regla:** todo texto que
+venga de datos —evidencia, títulos, pasos, prosa del modelo— pasa por `pdfText()` antes de
+entrar en un `<Text>`. Si algún día se registra una fuente con Unicode completo, la función
+puede volverse identidad, pero no desaparecer.

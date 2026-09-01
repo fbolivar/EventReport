@@ -1,24 +1,10 @@
 import { Document, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
 
 import type { ReportInput } from "@/lib/reports/input";
+import { INK, INK_SOFT, LINE, SEVERITY, pdfText } from "@/lib/reports/pdf-theme";
 import type { ReportSections } from "@/lib/reports/sections";
 
-/**
- * The PDF the customer takes to a board meeting or to an auditor.
- *
- * The palette is the one from styles/tokens.css. react-pdf cannot read CSS
- * variables, so the values are repeated here — the only place in the codebase
- * where that is true, and the reason this file names its source.
- */
-const INK = "#0C1B2A";
-const INK_SOFT = "#5A6B7C";
-const LINE = "#E2E7EC";
-const SEVERITY: Record<string, string> = {
-  critical: "#B3261E",
-  high: "#C2410C",
-  medium: "#A16207",
-  low: "#546374",
-};
+/** El PDF que el cliente lleva a la junta o al auditor. La paleta vive en `pdf-theme`. */
 
 const styles = StyleSheet.create({
   page: { paddingTop: 48, paddingBottom: 56, paddingHorizontal: 48, fontSize: 10, color: INK },
@@ -89,7 +75,7 @@ export function ExecutiveReport({
         <Text style={styles.brand}>EventReport</Text>
         <Text style={styles.h1}>Informe ejecutivo de postura</Text>
         <Text style={styles.meta}>
-          {input.tenant.name} · {period}
+          {pdfText(input.tenant.name)} · {period}
         </Text>
 
         {input.score ? (
@@ -108,8 +94,8 @@ export function ExecutiveReport({
           </View>
         ) : null}
 
-        <Text style={styles.body}>{sections.summary}</Text>
-        <Text style={{ ...styles.body, ...styles.soft }}>{sections.trend}</Text>
+        <Text style={styles.body}>{pdfText(sections.summary)}</Text>
+        <Text style={{ ...styles.body, ...styles.soft }}>{pdfText(sections.trend)}</Text>
 
         <Text style={styles.h2}>Riesgos principales</Text>
         {sections.risks.map((risk, index) => {
@@ -121,9 +107,9 @@ export function ExecutiveReport({
                   {finding.code} · {finding.severity}
                 </Text>
               ) : null}
-              <Text style={styles.riskTitle}>{risk.title}</Text>
-              <Text style={styles.body}>{risk.impact}</Text>
-              <Text style={{ ...styles.body, ...styles.soft }}>{risk.action}</Text>
+              <Text style={styles.riskTitle}>{pdfText(risk.title)}</Text>
+              <Text style={styles.body}>{pdfText(risk.impact)}</Text>
+              <Text style={{ ...styles.body, ...styles.soft }}>{pdfText(risk.action)}</Text>
             </View>
           );
         })}
@@ -142,7 +128,7 @@ export function ExecutiveReport({
             </Text>
             {sections.plan[key].map((item) => (
               <Text key={item} style={{ ...styles.body, ...styles.soft }}>
-                · {item}
+                · {pdfText(item)}
               </Text>
             ))}
           </View>
@@ -166,7 +152,7 @@ export function ExecutiveReport({
         ))}
 
         <Text style={styles.h2}>Cumplimiento</Text>
-        <Text style={{ ...styles.body, ...styles.soft }}>{sections.complianceNote}</Text>
+        <Text style={{ ...styles.body, ...styles.soft }}>{pdfText(sections.complianceNote)}</Text>
         <View style={styles.tableHead}>
           <Text>Marco</Text>
           <Text>Evaluables · cumplen · no cumplen</Text>
@@ -184,7 +170,7 @@ export function ExecutiveReport({
         {input.devices.map((device) => (
           <View key={device.hostname} style={styles.row}>
             <Text>
-              {device.hostname} · {device.brand} {device.firmware}
+              {pdfText(device.hostname)} · {device.brand} {pdfText(device.firmware)}
             </Text>
             <Text style={styles.soft}>
               {device.unevaluableRules.length === 0

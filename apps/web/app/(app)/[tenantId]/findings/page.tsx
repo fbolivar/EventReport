@@ -5,6 +5,7 @@ import { FindingDrawer } from "@/components/app/findings/finding-drawer";
 import { FindingsTable } from "@/components/app/findings/findings-table";
 import { FilterLinks } from "@/components/app/shell/filter-links";
 import { PageHeader } from "@/components/app/shell/page-header";
+import { GenerateReportButton } from "../reports/generate-button";
 import { EmptyState } from "@/components/shared/states";
 import { ButtonLink } from "@/components/shared/button";
 import { Surface } from "@/components/shared/surface";
@@ -77,9 +78,12 @@ export default async function FindingsPage({
         title="Hallazgos"
         meta={`${visible.length} de ${allFindings.length} · cada uno con evidencia y remediación de la marca`}
         action={
-          <ButtonLink href={`/${tenantId}/reports`} variant="secondary">
-            Informe de hardening
-          </ButtonLink>
+          <GenerateReportButton
+            tenantId={tenantId}
+            type="hardening"
+            label="Informe de hardening"
+            variant="secondary"
+          />
         }
       />
 
