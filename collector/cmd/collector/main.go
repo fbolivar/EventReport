@@ -260,14 +260,57 @@ func runSetup(args []string, logger *slog.Logger) error {
 		openBrowser("http://" + *addr)
 	}
 
-	fmt.Printf("\n  Abre http://%s para conectar tu firewall.\n  Esta ventana puede quedarse abierta.\n\n", *addr)
-	return setup.Serve(ctx, *addr, &collectorDevice{path: *path, logger: logger}, logger)
+	fmt.Printf("\n  Abre http://%s para conectar tu firewall.\n  Deja esta ventana abierta: aquí corre el colector.\n\n", *addr)
+
+	// Cuando el técnico conecta el equipo, el colector empieza a medir en esta
+	// misma ventana. Sin esto, el asistente terminaba sin recoger un solo dato
+	// mientras la pantalla decía que estaba midiendo.
+	device := &collectorDevice{path: *path, logger: logger, started: make(chan string, 1)}
+
+	// Cada equipo conectado reinicia el bucle: el colector lee sus firewalls al
+	// arrancar, así que uno agregado después no existiría para él hasta el
+	// siguiente reinicio. Conectar dos equipos seguidos es lo normal en una
+	// sede con dos firewalls.
+	go func() {
+		var running context.CancelFunc
+
+		for {
+			var passphrase string
+			select {
+			case passphrase = <-device.started:
+			case <-ctx.Done():
+				if running != nil {
+					running()
+				}
+				return
+			}
+
+			if running != nil {
+				running()
+			}
+
+			loop, cancel := context.WithCancel(ctx)
+			running = cancel
+
+			go func(loop context.Context, passphrase string) {
+				logger.Info("midiendo")
+				if err := collect(loop, *path, passphrase, logger); err != nil && loop.Err() == nil {
+					logger.Error("el colector se detuvo", "error", err)
+				}
+			}(loop, passphrase)
+		}
+	}()
+
+	return setup.Serve(ctx, *addr, device, logger)
 }
 
 // collectorDevice conecta el asistente con lo que el colector ya sabe hacer.
 type collectorDevice struct {
 	path   string
 	logger *slog.Logger
+	// started avisa una sola vez, con la frase de paso, para que el bucle del
+	// colector arranque en cuanto haya un equipo conectado.
+	started chan string
 }
 
 func (c *collectorDevice) Test(ctx context.Context, host, token string, insecure bool) (setup.Identity, error) {
@@ -355,6 +398,12 @@ func (c *collectorDevice) Connect(ctx context.Context, host, token, passphrase s
 	if err := config.Save(c.path, file); err != nil {
 		return setup.Identity{}, err
 	}
+
+	// Arranca la medición sin bloquear la respuesta: el técnico ve "listo" y el
+	// primer snapshot sale en segundos, no en la próxima ronda.
+	// Sin `default`: cada equipo conectado tiene que reiniciar el bucle, y el
+	// canal tiene espacio para el aviso.
+	c.started <- passphrase
 
 	return setup.Identity{
 		Hostname:   snapshot.Device.Hostname,
@@ -566,7 +615,20 @@ func runCollector(args []string, logger *slog.Logger) error {
 		return err
 	}
 
-	file, err := config.Load(*path)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	return collect(ctx, *path, *passphrase, logger)
+}
+
+// collect es el bucle del colector: recibe, agrega, cierra horas y envía.
+//
+// Vive aparte de la orden `run` porque el asistente de instalación lo arranca
+// en cuanto el técnico conecta el firewall. Antes no lo hacía y la pantalla
+// decía "el colector quedó midiendo" mientras no medía nada: el cliente cerraba
+// la ventana y no llegaba un solo dato.
+func collect(ctx context.Context, path, passphrase string, logger *slog.Logger) error {
+	file, err := config.Load(path)
 	if err != nil {
 		return err
 	}
@@ -578,7 +640,7 @@ func runCollector(args []string, logger *slog.Logger) error {
 
 	devices := make([]pipeline.Device, 0, len(file.Devices))
 	for _, device := range file.Devices {
-		built, err := buildAdapter(device, *passphrase)
+		built, err := buildAdapter(device, passphrase)
 		if err != nil {
 			return err
 		}
@@ -601,9 +663,6 @@ func runCollector(args []string, logger *slog.Logger) error {
 
 	worker := pipeline.New(listener, store, aggregate.New(), pending, logger, devices)
 	client := transport.New(file.BaseURL, file.CollectorID, key)
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	if err := listener.Start(ctx); err != nil {
 		return fmt.Errorf("abrir el receptor de syslog: %w", err)

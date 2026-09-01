@@ -159,9 +159,10 @@ $("conectar").onclick = async () => {
     $("s2").className = "done";
     $("s3").className = "done";
     $("t2").textContent = "Firewall conectado: " + result.hostname;
-    $("t3").textContent = "Midiendo. Ya puedes cerrar esta ventana.";
+    $("t3").textContent = "Midiendo. Puedes cerrar el navegador.";
     say(
-      "Listo. El colector quedó midiendo y en unos minutos verás tu firewall en el portal.\n\n" +
+      "Listo. El colector ya está midiendo: en unos minutos verás tu firewall en el portal.\n\n" +
+        "Deja abierta la ventana negra de la instalación — ahí corre el colector.\n" +
         "Falta un paso en el equipo: apunta su syslog a " + result.syslogAddr + ".",
       "ok",
     );

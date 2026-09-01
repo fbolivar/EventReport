@@ -965,3 +965,18 @@ identidad —dos equipos sin serie se pisarían entre sí—, sino que cae al no
 
 **Regla:** un simulador sirve para ejercitar el camino, no para validar el contrato. El contrato
 se confirma contra un equipo real o contra la documentación del fabricante.
+
+#### El asistente decía "midiendo" sin medir
+
+Tras conectar el firewall, la pantalla anunciaba que el colector quedaba midiendo — y no medía:
+`setup` registraba el equipo y ahí terminaba. El cliente cerraba la ventana y no llegaba un solo
+dato. Se vio con el FortiGate 40F real: equipo registrado con su serie y su firmware correctos,
+**cero snapshots**.
+
+El bucle de recolección se separó de la orden `run` y ahora arranca solo en cuanto hay un equipo
+conectado, en la misma ventana. Cada equipo que se conecta lo reinicia: el colector lee sus
+firewalls al arrancar, así que uno agregado después no existiría para él hasta el próximo
+reinicio, y una sede con dos firewalls es lo normal.
+
+**Regla:** una pantalla no puede afirmar un estado que el programa no ha alcanzado. Si dice
+"midiendo", que esté midiendo.
