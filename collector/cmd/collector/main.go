@@ -120,40 +120,73 @@ func runEnroll(args []string, logger *slog.Logger) error {
 	// identity yet, and the single-use token is what authenticates it.
 	logger.Info("enrolando", "url", *baseURL, "hostname", name)
 
-	collectorID, err := postEnrolment(*baseURL, map[string]any{
+	answer, err := postEnrolment(*baseURL, map[string]any{
 		"token":     *token,
 		"publicKey": public,
 		"hostname":  name,
 		"version":   version,
 	})
 	if err != nil {
-		// The cloud side of enrolment lands in phase 1; until then the
-		// operator registers the key from the portal and the collector keeps
-		// its own half, which is the part that must never travel.
-		logger.Warn("el enrolamiento automático todavía no está disponible", "detalle", err)
+		// Si la nube no responde, el operador todavía puede registrar la clave a
+		// mano desde el portal. La mitad privada no viaja en ningún caso.
+		logger.Warn("no se pudo completar el enrolamiento", "detalle", err)
 		fmt.Printf("clave pública del colector: %s\n", public)
 		fmt.Println("regístrala en el portal para completar el enrolamiento")
 	}
 
-	file := &config.File{
-		CollectorID: collectorID,
-		BaseURL:     *baseURL,
-		PrivateKey:  seed,
-		SyslogAddr:  "0.0.0.0:514",
-		VaultDir:    filepath.Join(filepath.Dir(*path), "vault"),
-		BufferDir:   filepath.Join(filepath.Dir(*path), "buffer"),
-		VaultDays:   7,
+	syslogAddr := answer.Config.SyslogAddr
+	if syslogAddr == "" {
+		syslogAddr = "0.0.0.0:514"
 	}
 
-	return config.Save(*path, file)
+	file := &config.File{
+		CollectorID: answer.CollectorID,
+		BaseURL:     *baseURL,
+		PrivateKey:  seed,
+		SyslogAddr:  syslogAddr,
+		VaultDir:    filepath.Join(filepath.Dir(*path), "vault"),
+		BufferDir:   filepath.Join(filepath.Dir(*path), "buffer"),
+		// Los días de bóveda los decide el plan, no el archivo local.
+		VaultDays: answer.Config.VaultDays,
+	}
+
+	if err := config.Save(*path, file); err != nil {
+		return err
+	}
+
+	if answer.CollectorID != "" {
+		logger.Info("colector enrolado",
+			"id", answer.CollectorID,
+			"boveda_dias", answer.Config.VaultDays,
+			"snapshots_por_dia", answer.Config.SnapshotsPerDay,
+			"rollup_minutos", answer.Config.RollupMinutes)
+	}
+	return nil
 }
 
-// postEnrolment performs the unsigned enrolment call and returns the collector
-// id the cloud assigns.
-func postEnrolment(baseURL string, payload map[string]any) (string, error) {
+// enrolmentAnswer is what the cloud sends back: the collector's identity and
+// the operating parameters derived from the customer's plan. They are decided
+// there and not here on purpose — a customer must not raise their own quota by
+// editing a local file.
+type enrolmentAnswer struct {
+	CollectorID string `json:"collectorId"`
+	Config      struct {
+		SnapshotsPerDay      int    `json:"snapshotsPerDay"`
+		RollupMinutes        int    `json:"rollupMinutes"`
+		VaultDays            int    `json:"vaultDays"`
+		CriticalEventsPerDay int    `json:"criticalEventsPerDay"`
+		SyslogAddr           string `json:"syslogAddr"`
+	} `json:"config"`
+}
+
+// postEnrolment performs the unsigned enrolment call and returns what the cloud
+// assigns to this collector.
+func postEnrolment(baseURL string, payload map[string]any) (enrolmentAnswer, error) {
+	var answer enrolmentAnswer
+
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", err
+		return answer, err
 	}
 
 	response, err := http.Post(
@@ -162,22 +195,19 @@ func postEnrolment(baseURL string, payload map[string]any) (string, error) {
 		bytes.NewReader(body),
 	)
 	if err != nil {
-		return "", err
+		return answer, err
 	}
 	defer response.Body.Close()
 
-	answer, _ := io.ReadAll(response.Body)
+	raw, _ := io.ReadAll(response.Body)
 	if response.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("enroll respondió %d: %s", response.StatusCode, answer)
+		return answer, fmt.Errorf("enroll respondió %d: %s", response.StatusCode, raw)
 	}
 
-	var result struct {
-		CollectorID string `json:"collectorId"`
+	if err := json.Unmarshal(raw, &answer); err != nil {
+		return answer, err
 	}
-	if err := json.Unmarshal(answer, &result); err != nil {
-		return "", err
-	}
-	return result.CollectorID, nil
+	return answer, nil
 }
 
 func buildAdapter(device config.Device, passphrase string) (adapter.Adapter, error) {

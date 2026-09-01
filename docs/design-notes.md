@@ -713,3 +713,50 @@ contradice a sí mismo.
 
 Queda pendiente el informe "Comparativo de clientes" (§8, mensual para MSSP): el tablero responde
 "qué hago hoy", no "cómo va mi cartera este mes".
+
+## Bloque 15 — Enrolamiento del colector
+
+El primer contacto real del cliente con el producto: instala el colector, pega un comando y el
+equipo aparece conectado en el portal. Hasta ahora la Edge Function `enroll` era un esqueleto que
+devolvía 501 y el colector Go degradaba pidiendo registrar la clave a mano.
+
+Cómo quedó, y por qué:
+
+- **El token se guarda hasheado.** Es la única llamada sin firma —el colector todavía no tiene
+  identidad—, así que el token *es* la credencial. Quien lea `collector_enrolments`, nosotros
+  incluidos, no puede enrolar un colector con lo que hay ahí.
+- **Se muestra una sola vez**, y la pantalla lo dice antes de que el operador cierre la ventana.
+  Se entrega el comando completo, no el token suelto: lo que se pega en la máquina del cliente es
+  el comando.
+- **Un solo uso y 24 horas.** Un token que sirve para siempre acaba pegado en un chat. Se quema
+  con `update ... where used_at is null`, así que dos enrolamientos simultáneos no pueden ganar
+  los dos, y si el quemado falla se borra el colector recién creado.
+- **Token inválido, usado y vencido responden lo mismo**: no se le dice a quien prueba tokens cuál
+  de las tres acertó.
+- **La configuración la decide la nube**, derivada del plan: snapshots por día, minutos de rollup,
+  días de bóveda, tope de eventos. El colector la guarda tal cual. Si la calculara él, un cliente
+  se subiría el cupo editando un archivo local.
+- El colector arranca en `measuring`: los primeros días sirven para conocer el tráfico normal
+  antes de empezar a llamar la atención (§5).
+
+Probado de punta a punta con el binario Go real contra la función desplegada: token emitido en el
+portal, `collector enroll` lo consume, el equipo aparece en Ajustes con bóveda de 30 días —la del
+plan premium—, y **el mismo token vuelve a usarse y responde 401**, igual que uno vencido.
+
+#### El segundo cliente destapó que el portal nunca filtraba por empresa
+
+Al crear el cliente de demostración para el tablero MSSP, Ajustes de Acme empezó a decir "3 sedes"
+—Acme tiene dos— y los hallazgos de una empresa aparecían en el portal de la otra. La causa:
+**la capa de datos no filtraba por la empresa de la URL**, se apoyaba solo en RLS. Con un usuario
+por cliente eso es correcto; con un MSSP miembro de varias empresas, el portal sumaba todo lo que
+el usuario puede ver, y un informe firmado podía salir con hallazgos de otro cliente.
+
+RLS decide **quién** puede ver; faltaba decidir **qué** se está mirando. El middleware anota la
+empresa de la URL en un encabezado y `createClient()` devuelve un cliente acotado a ella con el
+mismo proxy que ya usaba la generación programada. El RPC de personas no pasa por el proxy —es una
+función, no una tabla—, así que ahora recibe la empresa como argumento; sigue comprobando la
+membresía por dentro: **el argumento acota, no autoriza**.
+
+**Regla:** en una aplicación multiempresa, RLS es la frontera de seguridad y el filtro por la
+empresa de la URL es la de corrección. Faltando el segundo, el error no es un rechazo: son datos
+de más, que es peor. Y no se ve con un solo cliente en la base.

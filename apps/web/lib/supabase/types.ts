@@ -46,6 +46,60 @@ export type Database = {
           },
         ]
       }
+      collector_enrolments: {
+        Row: {
+          collector_id: string | null
+          created_at: string
+          created_by: string | null
+          expires_at: string
+          id: string
+          label: string | null
+          site_id: string
+          tenant_id: string
+          token_hash: string
+          used_at: string | null
+        }
+        Insert: {
+          collector_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          expires_at: string
+          id?: string
+          label?: string | null
+          site_id: string
+          tenant_id: string
+          token_hash: string
+          used_at?: string | null
+        }
+        Update: {
+          collector_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string
+          id?: string
+          label?: string | null
+          site_id?: string
+          tenant_id?: string
+          token_hash?: string
+          used_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "collector_enrolments_site_id_fkey"
+            columns: ["site_id"]
+            isOneToOne: false
+            referencedRelation: "sites"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "collector_enrolments_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       collector_heartbeats: {
         Row: {
           clock_skew_seconds: number | null
@@ -1195,7 +1249,7 @@ export type Database = {
       is_tenant_admin: { Args: { p_tenant_id: string }; Returns: boolean }
       is_tenant_member: { Args: { p_tenant_id: string }; Returns: boolean }
       tenant_member_profiles: {
-        Args: Record<PropertyKey, never>
+        Args: { p_tenant_id?: string }
         Returns: {
           id: string
           tenant_id: string
