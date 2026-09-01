@@ -88,10 +88,11 @@ function ScoreComponent({
       >
         {label} <span className="opacity-70">{weight}</span>
       </dt>
-      <dd className="flex flex-1 items-center gap-2">
+      <dd className="flex flex-1 items-center justify-between gap-2 sm:justify-start">
+        {/* Bajo 640 px no queda ancho útil para la barra: el número solo se lee igual. */}
         <div
           className={cn(
-            "h-1.5 w-full max-w-40 overflow-hidden rounded-full",
+            "hidden h-1.5 w-full max-w-40 overflow-hidden rounded-full sm:block",
             onInk ? "bg-ink-line" : "bg-line",
           )}
         >
