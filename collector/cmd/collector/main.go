@@ -11,6 +11,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -149,8 +151,11 @@ func runEnroll(args []string, logger *slog.Logger) error {
 		SyslogAddr:  syslogAddr,
 		VaultDir:    filepath.Join(filepath.Dir(*path), "vault"),
 		BufferDir:   filepath.Join(filepath.Dir(*path), "buffer"),
-		// Los días de bóveda los decide el plan, no el archivo local.
-		VaultDays: answer.Config.VaultDays,
+		// Los días de bóveda, los snapshots y el intervalo de rollups los
+		// decide el plan, no el archivo local.
+		VaultDays:       answer.Config.VaultDays,
+		SnapshotsPerDay: answer.Config.SnapshotsPerDay,
+		RollupMinutes:   answer.Config.RollupMinutes,
 	}
 
 	if err := config.Save(*path, file); err != nil {
@@ -437,6 +442,22 @@ func runCollector(args []string, logger *slog.Logger) error {
 	upload := time.NewTicker(5 * time.Minute)
 	defer upload.Stop()
 
+	// Los snapshots por día los decide el plan y llegan en el enrolamiento.
+	perDay := file.SnapshotsPerDay
+	if perDay < 1 {
+		perDay = 1
+	}
+	snapshot := time.NewTicker(time.Duration(24/perDay) * time.Hour)
+	defer snapshot.Stop()
+
+	// El primero se toma al arrancar: esperar horas a la primera foto deja al
+	// cliente mirando un portal vacío justo cuando acaba de instalar.
+	for _, device := range devices {
+		if err := enqueueSnapshot(ctx, pending, device); err != nil {
+			logger.Error("no se pudo leer la configuración inicial", "firewall", device.FirewallID, "error", err)
+		}
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -454,9 +475,24 @@ func runCollector(args []string, logger *slog.Logger) error {
 			if _, err := worker.CloseHours(time.Now().UTC()); err != nil {
 				logger.Error("no se pudieron cerrar horas", "error", err)
 			}
+			if count, err := worker.FlushEvents(); err != nil {
+				logger.Error("no se pudieron encolar los eventos", "error", err)
+			} else if count > 0 {
+				logger.Info("eventos críticos encolados", "cantidad", count)
+			}
+
+		case <-snapshot.C:
+			// Un snapshot por intervalo del plan: es lo que refresca los
+			// hallazgos. Sin esto el portal muestra la foto del día del alta y
+			// nunca se entera de que el cliente arregló algo.
+			for _, device := range devices {
+				if err := enqueueSnapshot(ctx, pending, device); err != nil {
+					logger.Error("no se pudo leer la configuración", "firewall", device.FirewallID, "error", err)
+				}
+			}
 
 		case <-upload.C:
-			sendPending(ctx, client, pending, listener, logger)
+			sendPending(ctx, client, pending, worker, listener, logger)
 			if _, err := store.Rotate(time.Now()); err != nil {
 				logger.Error("no se pudo rotar la bóveda", "error", err)
 			}
@@ -468,16 +504,27 @@ func runCollector(args []string, logger *slog.Logger) error {
 }
 
 // sendPending uploads queued payloads in order and reports health.
-func sendPending(ctx context.Context, client *transport.Client, pending *buffer.Buffer, listener *syslog.Listener, logger *slog.Logger) {
+func sendPending(
+	ctx context.Context,
+	client *transport.Client,
+	pending *buffer.Buffer,
+	worker *pipeline.Pipeline,
+	listener *syslog.Listener,
+	logger *slog.Logger,
+) {
 	stats := listener.Stats()
+	unparsed, skew := worker.Quality()
 
 	heartbeat := map[string]any{
-		"version":          version,
-		"eps":              0,
+		"version": version,
+		// Eventos por segundo del último intervalo, no desde el arranque: lo
+		// que interesa es si el equipo está hablando ahora.
+		"eps":              stats.Received / 300,
 		"droppedPct":       listener.DroppedPercent(),
 		"queueDepth":       stats.Queued,
 		"diskFreeGb":       0,
-		"clockSkewSeconds": 0,
+		"clockSkewSeconds": skew,
+		"unparsed":         unparsed,
 	}
 	if _, err := client.Post(ctx, "heartbeat", heartbeat); err != nil {
 		logger.Warn("heartbeat sin respuesta", "error", err)
@@ -513,6 +560,34 @@ func sendPending(ctx context.Context, client *transport.Client, pending *buffer.
 
 		_ = pending.Ack(item.Path)
 	}
+}
+
+// enqueueSnapshot reads the firewall configuration and queues it for upload.
+//
+// Va al búfer y no directo a la red: si el enlace está caído, la foto no se
+// pierde: se sube cuando vuelva, y el diff de la nube la comparará con la
+// anterior igual que si hubiera llegado a tiempo.
+func enqueueSnapshot(ctx context.Context, pending *buffer.Buffer, device pipeline.Device) error {
+	timeout, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
+	config, err := device.Adapter.FetchConfig(timeout)
+	if err != nil {
+		return err
+	}
+
+	raw, err := json.Marshal(config)
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(raw)
+
+	return pending.Enqueue("config", map[string]any{
+		"firewallId":  device.FirewallID,
+		"collectedAt": time.Now().UTC().Format(time.RFC3339),
+		"sha256":      hex.EncodeToString(sum[:]),
+		"config":      config,
+	})
 }
 
 // runTest verifies the collector can reach each firewall's API.

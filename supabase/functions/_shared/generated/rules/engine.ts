@@ -54,7 +54,63 @@ export const RULES: Rule[] = [
   OP_004,
 ];
 
-export function evaluate(input: EvaluationInput): RuleResult[] {
+/**
+ * Rellena las colecciones ausentes antes de evaluar.
+ *
+ * El motor recibe la configuración que envió un colector, y eso es entrada
+ * externa: si una lista llega como `null` —cosa que pasa, porque en Go una
+ * lista vacía se serializa así— la evaluación entera reventaba y el cliente se
+ * quedaba sin hallazgos. Una regla puede no encontrar nada; lo que no puede es
+ * dejar de correr porque un firewall no tiene túneles VPN.
+ *
+ * Aquí se normaliza en vez de comprobar en cada regla: veinticuatro reglas
+ * defendiéndose por su cuenta es veinticuatro sitios donde olvidarlo.
+ */
+function withCollections(config: EvaluationInput["config"]): EvaluationInput["config"] {
+  const list = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : []);
+
+  return {
+    ...config,
+    // Las listas de dentro de cada objeto también llegan nulas: una política
+    // sin servicios, un administrador sin hosts de confianza. Se rellenan aquí
+    // por la misma razón que las de arriba.
+    admins: list(config.admins).map((admin) => ({
+      ...admin,
+      trustedHosts: list(admin?.trustedHosts),
+    })),
+    mgmtAccess: list(config.mgmtAccess).map((access) => ({
+      ...access,
+      protocols: list(access?.protocols),
+    })),
+    interfaces: list(config.interfaces),
+    policies: list(config.policies).map((policy) => ({
+      ...policy,
+      srcZones: list(policy?.srcZones),
+      dstZones: list(policy?.dstZones),
+      src: list(policy?.src),
+      dst: list(policy?.dst),
+      services: list(policy?.services),
+    })),
+    nat: list(config.nat).map((rule) => ({ ...rule, ports: list(rule?.ports) })),
+    certs: list(config.certs),
+    licenses: list(config.licenses),
+    vpn: { ...config.vpn, ipsec: list(config.vpn?.ipsec) },
+    services: {
+      ...config.services,
+      ntp: list(config.services?.ntp),
+      dns: list(config.services?.dns),
+      syslogTargets: list(config.services?.syslogTargets),
+    },
+    capabilities: {
+      ...config.capabilities,
+      unevaluableRules: list(config.capabilities?.unevaluableRules),
+    },
+  };
+}
+
+export function evaluate(raw: EvaluationInput): RuleResult[] {
+  const input: EvaluationInput = { ...raw, config: withCollections(raw.config) };
+
   return RULES.map((rule) => {
     const evaluable = rule.requires ? rule.requires(input.config.capabilities) : true;
 

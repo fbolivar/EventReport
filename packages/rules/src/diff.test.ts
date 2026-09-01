@@ -102,3 +102,39 @@ test("mover una política de posición sí es un cambio", () => {
   const [change] = diffConfigs(previous, next);
   assert.equal(change?.fields[0]?.field, "Posición");
 });
+
+test("un snapshot con listas ausentes se compara sin romperse", () => {
+  // Lo que hay guardado de verdad: un colector Go serializa las listas vacías
+  // como `null`. El diff recibe eso desde la base, no desde nuestros fixtures.
+  const previous = JSON.parse(JSON.stringify(cleanConfig())) as Record<string, unknown>;
+  for (const field of ["admins", "mgmtAccess", "interfaces", "policies", "nat"]) {
+    previous[field] = null;
+  }
+  previous.vpn = { ipsec: null };
+
+  const next = cleanConfig();
+  const changes = diffConfigs(previous as never, next);
+
+  // Todo lo que tiene el snapshot nuevo es un alta frente a un anterior vacío.
+  assert.ok(changes.length > 0);
+  assert.ok(changes.every((change) => change.kind === "added"));
+});
+
+test("una política con listas nulas dentro tampoco rompe el diff", () => {
+  // El nulo no siempre está en la colección: también aparece **dentro** de cada
+  // objeto, en `src`, `dst`, `services` o `trustedHosts`.
+  const previous = JSON.parse(JSON.stringify(cleanConfig())) as never as {
+    policies: Array<Record<string, unknown>>;
+    admins: Array<Record<string, unknown>>;
+  };
+  previous.policies[0]!.src = null;
+  previous.policies[0]!.dst = null;
+  previous.policies[0]!.services = null;
+  previous.admins[0]!.trustedHosts = null;
+
+  const changes = diffConfigs(previous as never, cleanConfig());
+  const policy = changes.find((change) => change.section === "policies");
+
+  assert.ok(policy, "el cambio de la política se reporta");
+  assert.ok(policy.fields.some((field) => field.before === "—"));
+});

@@ -31,6 +31,13 @@ type File struct {
 	// raw seed). It never leaves this machine.
 	PrivateKey string `json:"privateKey"`
 
+	// SnapshotsPerDay y RollupMinutes los decide el plan y llegan en el
+	// enrolamiento. Se guardan aquí para que el colector siga funcionando sin
+	// consultar nada al arrancar, pero no son suyos: un cambio de plan los
+	// reescribe en el siguiente enrolamiento.
+	SnapshotsPerDay int `json:"snapshotsPerDay,omitempty"`
+	RollupMinutes   int `json:"rollupMinutes,omitempty"`
+
 	SyslogAddr   string `json:"syslogAddr"`
 	VaultDir     string `json:"vaultDir"`
 	VaultDays    int    `json:"vaultDays"`

@@ -99,16 +99,26 @@ func TestEndToEndFromSyslogToPendingRollup(t *testing.T) {
 		t.Fatal("no quedó nada pendiente de enviar")
 	}
 
-	var hour aggregate.Hour
-	if err := json.Unmarshal(items[0].Payload, &hour); err != nil {
+	// Lo que queda en el búfer es la forma del contrato (§6.7), no la
+	// estructura interna del agregador: si alguien cambia una sin la otra, este
+	// asercion falla antes de que falle un cliente.
+	var payload RollupsPayload
+	if err := json.Unmarshal(items[0].Payload, &payload); err != nil {
 		t.Fatal(err)
 	}
 
-	if hour.DeviceID != "fw-1" {
-		t.Fatalf("deviceId = %s", hour.DeviceID)
+	if payload.FirewallID != "fw-1" {
+		t.Fatalf("firewallId = %s", payload.FirewallID)
 	}
-	if hour.Unparsed != 1 {
-		t.Fatalf("no reconocidas = %d: la línea ajena se cuenta", hour.Unparsed)
+	if len(payload.Hours) != 1 {
+		t.Fatalf("horas = %d", len(payload.Hours))
+	}
+	hour := payload.Hours[0]
+
+	// Las líneas no reconocidas no viajan en los contadores: van en el latido,
+	// como calidad del dato (§6.2).
+	if unparsed, _ := worker.Quality(); unparsed != 1 {
+		t.Fatalf("no reconocidas = %d: la línea ajena se cuenta", unparsed)
 	}
 
 	var allowed, denied int64

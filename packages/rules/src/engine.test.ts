@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Finding } from "@eventreport/schema";
 
-import { evaluate, reconcile, toFindings } from "./engine.ts";
-import { cleanInput, NOW } from "./fixture.ts";
+import { evaluate, reconcile, RULES, toFindings } from "./engine.ts";
+import { cleanInput, cleanSignals, FULL_CAPABILITIES, NOW } from "./fixture.ts";
 import { score } from "./score.ts";
 import type { EvaluationInput } from "./types.ts";
 
@@ -228,4 +228,45 @@ test("the score never bottoms out: it still separates bad from catastrophic", ()
 
   assert.ok(worse.value < bad.value, "más hallazgos, menos score");
   assert.ok(worse.value > 0, "un firewall pequeño y roto no marca cero: seguiría sin poder mejorar");
+});
+
+test("una configuración con listas ausentes no rompe el motor", () => {
+  // Lo que llega de un colector Go: las listas vacías viajan como `null`.
+  // Antes de esto, la primera regla que hacía `.length` tumbaba la evaluación
+  // entera y el cliente se quedaba sin un solo hallazgo.
+  const config = cleanInput().config as unknown as Record<string, unknown>;
+  for (const field of ["admins", "mgmtAccess", "interfaces", "policies", "nat", "certs", "licenses"]) {
+    config[field] = null;
+  }
+  config.vpn = { ipsec: null };
+  config.services = { ntp: null, dns: null, syslogTargets: null };
+  config.capabilities = { ...FULL_CAPABILITIES, unevaluableRules: null };
+
+  const results = evaluate({
+    config: config as never,
+    signals: cleanSignals(),
+    now: NOW,
+  });
+
+  assert.equal(results.length, RULES.length, "todas las reglas corrieron");
+  assert.ok(results.every((result) => Array.isArray(result.hits)));
+});
+
+test("las listas nulas dentro de cada objeto tampoco rompen el motor", () => {
+  // El nulo aparece también dentro: una política sin servicios, un
+  // administrador sin hosts de confianza. Es lo que llegó de un equipo real.
+  const input = cleanInput();
+  const config = input.config as unknown as {
+    policies: Array<Record<string, unknown>>;
+    admins: Array<Record<string, unknown>>;
+    mgmtAccess: Array<Record<string, unknown>>;
+  };
+  config.policies[0]!.src = null;
+  config.policies[0]!.dst = null;
+  config.policies[0]!.services = null;
+  config.admins[0]!.trustedHosts = null;
+  config.mgmtAccess[0]!.protocols = null;
+
+  const results = evaluate(input);
+  assert.equal(results.length, RULES.length);
 });

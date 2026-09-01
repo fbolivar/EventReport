@@ -37,26 +37,44 @@ export interface ConfigChange {
 }
 
 /**
+ * Una colección ausente y una vacía significan lo mismo. Se aplica a las
+ * colecciones del snapshot **y** a las listas dentro de cada objeto: en un
+ * snapshot real venían nulos los dos.
+ */
+const collection = <T,>(value: T[] | null | undefined): T[] =>
+  Array.isArray(value) ? value : [];
+
+/**
  * Una lista se compara como conjunto: se ordena antes de comparar.
  *
  * Sin esto, el orden en que el equipo devuelve los perfiles de inspección
  * —que no significa nada— aparecía como un cambio de configuración. El informe
  * se llenaría de cambios que nadie hizo, y a la tercera vez nadie lo abre.
  */
-const list = (values: string[]) =>
-  values.length === 0 ? "—" : [...values].sort((a, b) => a.localeCompare(b, "es")).join(", ");
+const list = (values: string[] | null | undefined) => {
+  const items = collection(values);
+  return items.length === 0 ? "—" : [...items].sort((a, b) => a.localeCompare(b, "es")).join(", ");
+};
 
 /** Compara dos colecciones por su identidad y devuelve altas, bajas y cambios. */
+/**
+ * Una colección ausente y una vacía significan lo mismo.
+ *
+ * Los snapshots guardados son entrada externa: los escribió un colector, puede
+ * que de una versión anterior, y una lista vacía viaja como `null` desde Go.
+ * Comparar contra `null` tumbaba la ingesta entera —el cliente perdía el
+ * snapshot y el diff— por un firewall que no tenía túneles VPN.
+ */
 function compare<T>(
   section: ChangeSection,
-  previous: T[],
-  next: T[],
+  previousRaw: T[] | null | undefined,
+  nextRaw: T[] | null | undefined,
   identity: (item: T) => string,
   label: (item: T) => string,
   fields: Array<{ name: string; read: (item: T) => string }>,
 ): ConfigChange[] {
-  const before = new Map(previous.map((item) => [identity(item), item]));
-  const after = new Map(next.map((item) => [identity(item), item]));
+  const before = new Map(collection(previousRaw).map((item) => [identity(item), item]));
+  const after = new Map(collection(nextRaw).map((item) => [identity(item), item]));
   const changes: ConfigChange[] = [];
 
   for (const [key, item] of after) {
@@ -154,8 +172,8 @@ export function diffConfigs(previous: FirewallConfig, next: FirewallConfig): Con
     ),
     ...compare(
       "vpn",
-      previous.vpn.ipsec,
-      next.vpn.ipsec,
+      previous.vpn?.ipsec,
+      next.vpn?.ipsec,
       (tunnel) => tunnel.name,
       (tunnel) => `Túnel ${tunnel.name}`,
       [

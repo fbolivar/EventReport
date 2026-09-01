@@ -838,3 +838,70 @@ SMTP_USER o SMTP_PASSWORD", que es exactamente lo que debe decir hasta que la cu
 El repositorio se saca con CRLF, y `gofmt` espera LF: `gofmt -l` marca archivos que no tienen nada
 mal. Antes de "arreglar" formato, mirar `gofmt -d`: si el diff son líneas completas sin cambios
 visibles, es el fin de línea y hay que dejarlo.
+
+## Bloque 17 — Fase 1 del colector cerrada
+
+Tres de las cuatro Edge Functions que quedaban en esqueleto ya escriben: `ingest-rollups`,
+`ingest-events` y `heartbeat`. La cuarta, `evidence`, es fase 5 por diseño (§6.3: la consulta
+desde el portal llega con el mecanismo de evidencia bajo demanda), y sigue siendo esqueleto a
+propósito.
+
+Del lado del colector, el bucle de ejecución quedó completo: cierra horas, encola eventos
+críticos, toma snapshots de configuración según el plan y reporta calidad del dato en el latido.
+
+Decisiones que quedaron en el código:
+
+- **La comprobación "este firewall es de este colector" vive en un solo sitio**
+  (`_shared/firewall.ts`). Es la que nunca se puede olvidar: sin ella, un colector con
+  credenciales válidas escribiría en los datos de otra empresa cambiando un identificador.
+- **La severidad de un evento la decide EventReport, no el fabricante.** El campo `severity` de
+  un FortiGate viene vacío en la mitad de las líneas que importan —un ingreso administrativo no
+  trae ninguno—, y copiarlo hacía que la nube descartara el evento en silencio.
+- **Un ingreso administrativo se clasifica como `admin`, no como `system`.** FortiGate mete en
+  "system" tanto un reinicio como la entrada de una persona a configurar el firewall. Para el
+  producto no es lo mismo.
+- **Lo que se encola es la forma del contrato**, no la estructura interna del agregador. Encolar
+  la estructura interna acopla el formato del disco con el de la API.
+- **La configuración del plan la decide la nube** y el colector la guarda: snapshots por día,
+  minutos de rollup, días de bóveda. Si la calculara él, un cliente se subiría el cupo editando
+  un archivo local.
+
+#### Auto-blindaje: `null` no es una lista vacía, y apareció tres veces
+
+El primer snapshot de un firewall de verdad tumbó la ingesta con
+`Cannot read properties of null (reading 'length')`. En Go una lista vacía se serializa como
+`null`, y **todo** el lado TypeScript asumía arreglos porque los fixtures siempre los traían.
+Falló tres veces seguidas, en tres capas distintas:
+
+1. el motor de reglas, sobre `config.admins`;
+2. el diff, sobre las colecciones del snapshot guardado;
+3. otra vez el diff y el motor, sobre las listas **dentro** de cada objeto (`policy.src`,
+   `admin.trustedHosts`, `services.ntp`).
+
+Arreglado en los dos lados, que es lo que corresponde: el colector nunca envía `null` —hay una
+prueba que serializa un snapshot de un equipo recién configurado y falla si aparece uno— y el
+motor y el diff normalizan lo que reciben, porque son entrada externa y pueden venir de un
+colector de una versión anterior.
+
+**Regla:** en cualquier frontera entre lenguajes, una colección ausente y una vacía significan lo
+mismo, y quien recibe lo normaliza. Los fixtures no encuentran esto: los escribe la misma persona
+que escribe el consumidor.
+
+#### Verificación
+
+Contra el proyecto de producción, con el colector Go compilado y un FortiGate simulado con
+certificado autofirmado:
+
+| Vía | Resultado |
+|---|---|
+| `enroll` | Colector registrado con los parámetros del plan |
+| `device add` | Equipo dado de alta; token cifrado en disco |
+| Snapshot de configuración | Aceptado; **6 hallazgos** derivados de la configuración real del equipo |
+| 600 líneas de syslog | Agregadas por hora; 11 eventos críticos encolados |
+| `ingest-events` | Aceptado y visible en el portal |
+| `ingest-rollups` | Aceptado; responde hasta qué hora, para que el colector purgue su búfer |
+| `heartbeat` | Aceptado; el colector aparece con EPS, descartes y desfase de reloj |
+
+Los hallazgos que produjo el equipo simulado son exactamente los que su configuración merece:
+administración expuesta en WAN, administrador sin segundo factor y sin hosts de confianza,
+retención insuficiente, sin NTP y sin destino de syslog adicional.

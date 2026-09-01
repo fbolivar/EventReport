@@ -141,9 +141,15 @@ type firewallPolicy struct {
 
 func yes(value string) bool { return value == "enable" }
 
+// splitList devuelve **siempre** una lista, nunca nil.
+//
+// En Go una lista nil se serializa como `null`, y del otro lado el motor de
+// reglas hacía `.length` sobre eso: la evaluación entera reventaba porque un
+// administrador no tenía hosts de confianza. Una lista vacía y la ausencia de
+// lista significan lo mismo aquí, así que solo debe viajar una de las dos.
 func splitList(value string) []string {
 	if value == "" {
-		return nil
+		return []string{}
 	}
 	parts := strings.Fields(value)
 	out := make([]string, 0, len(parts))
@@ -155,6 +161,7 @@ func splitList(value string) []string {
 	return out
 }
 
+// names devuelve siempre una lista: ver el comentario de splitList.
 func names(list []struct {
 	Name string `json:"name"`
 }) []string {
@@ -209,10 +216,26 @@ func (a *Adapter) FetchConfig(ctx context.Context) (*normalize.Config, error) {
 		return nil, err
 	}
 
+	// Las listas arrancan vacías, no nil: en Go una lista nil se serializa como
+	// `null` y el otro lado espera un arreglo. Un firewall sin túneles VPN debe
+	// enviar `[]`, no `null`.
 	config := &normalize.Config{
 		SchemaVersion: normalize.SchemaVersion,
 		CollectedAt:   time.Now().UTC().Format(time.RFC3339),
 		Capabilities:  a.Capabilities(),
+		Admins:        []normalize.Admin{},
+		MgmtAccess:    []normalize.ManagementAccess{},
+		Interfaces:    []normalize.Interface{},
+		Policies:      []normalize.Policy{},
+		NAT:           []normalize.NATRule{},
+		Certs:         []normalize.Certificate{},
+		Licenses:      []normalize.License{},
+		VPN:           normalize.VPN{IPsec: []normalize.IPsecTunnel{}},
+		Services: normalize.Services{
+			NTP:           []string{},
+			DNS:           []string{},
+			SyslogTargets: []string{},
+		},
 		Device: normalize.Device{
 			Brand:         a.Brand(),
 			Model:         status.Results.Model,

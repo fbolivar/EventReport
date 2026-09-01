@@ -119,11 +119,34 @@ func eventType(fields map[string]string) normalize.EventType {
 		case "user":
 			return normalize.EventVPN
 		case "system":
+			// FortiGate mete en "system" tanto un reinicio como el ingreso de
+			// un administrador. Para el producto no es lo mismo: quién entra a
+			// configurar el firewall es de las pocas cosas que interrumpen a
+			// una persona (§6.4), y por eso se separa aquí.
+			if isAdminActivity(fields) {
+				return normalize.EventAdmin
+			}
 			return normalize.EventSystem
 		}
 		return normalize.EventSystem
 	}
 	return normalize.EventSystem
+}
+
+// isAdminActivity reconoce la actividad administrativa dentro de los eventos
+// de sistema: ingreso a la consola y cambios de configuración.
+func isAdminActivity(fields map[string]string) bool {
+	description := strings.ToLower(fields["logdesc"])
+	switch {
+	case strings.Contains(description, "admin login"),
+		strings.Contains(description, "admin logout"),
+		strings.Contains(description, "configuration changed"),
+		strings.Contains(description, "object attribute configured"):
+		return true
+	}
+	// Algunas versiones no traen logdesc; el par (usuario, interfaz de
+	// administración) es la otra señal fiable.
+	return fields["user"] != "" && fields["ui"] != ""
 }
 
 // action reads `action` and, for UTM lines, `utmaction`, which is what

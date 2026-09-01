@@ -3,6 +3,7 @@ package pipeline
 import (
 	"compress/gzip"
 	"context"
+	"github.com/fbolivar/eventreport/collector/internal/normalize"
 	"io"
 	"log/slog"
 	"net"
@@ -157,5 +158,25 @@ func TestPipelineStopsWithContext(t *testing.T) {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("los workers no terminaron al cancelar")
+	}
+}
+
+func TestCriticalEventSeverityIsOurs(t *testing.T) {
+	// Un ingreso administrativo no trae `severity` en el log del fabricante.
+	// Si copiáramos ese campo vacío, la nube descartaría el evento en silencio.
+	admin := &normalize.Event{Type: normalize.EventAdmin, Action: normalize.ActionAllow}
+	title, severity, ok := criticalEvent(admin)
+	if !ok || severity != "high" {
+		t.Fatalf("ingreso administrativo = %q/%q/%v", title, severity, ok)
+	}
+
+	vpn := &normalize.Event{Type: normalize.EventVPN, Action: normalize.ActionDeny}
+	if _, severity, ok := criticalEvent(vpn); !ok || severity != "medium" {
+		t.Fatalf("vpn fallida = %q/%v", severity, ok)
+	}
+
+	traffic := &normalize.Event{Type: normalize.EventTraffic, Action: normalize.ActionAllow}
+	if _, _, ok := criticalEvent(traffic); ok {
+		t.Fatal("el tráfico normal no es un evento crítico")
 	}
 }

@@ -1,6 +1,7 @@
 package fortigate
 
 import (
+	"github.com/fbolivar/eventreport/collector/internal/normalize"
 	"testing"
 	"time"
 )
@@ -95,8 +96,11 @@ func TestParseQuotedValuesWithSpaces(t *testing.T) {
 	if !ok {
 		t.Fatal("la línea de administración debería reconocerse")
 	}
-	if event.Type != "system" {
-		t.Fatalf("tipo = %s, se esperaba system", event.Type)
+	// La línea es un ingreso de administrador: se clasifica como `admin`, no
+	// como `system`. Esta prueba mira el entrecomillado, no el tipo, pero la
+	// aserción se mantiene correcta para que no vuelva a fijar lo contrario.
+	if event.Type != normalize.EventAdmin {
+		t.Fatalf("tipo = %s, se esperaba admin", event.Type)
 	}
 	if event.User != "admin" {
 		t.Fatalf("usuario = %s: un valor entrecomillado con espacios no debe romper el resto", event.User)
@@ -123,5 +127,41 @@ func TestParseKeyValueHandlesTrailingQuotedValue(t *testing.T) {
 
 	if fields["a"] != "1" || fields["b"] != "two words" || fields["c"] != "3" {
 		t.Fatalf("campos = %v", fields)
+	}
+}
+
+func TestAdminLoginIsAdminActivity(t *testing.T) {
+	adapter := &Adapter{}
+
+	line := []byte(`date=2026-09-01 time=13:40:00 devname="FGT60F-LAB" type="event" subtype="system" ` +
+		`level="notice" logdesc="Admin login successful" user="admin" ui="https(190.85.212.44)" ` +
+		`srcip=190.85.212.44 action="login" status="success"`)
+
+	event, ok := adapter.ParseLog(line)
+	if !ok {
+		t.Fatal("la línea no se reconoció")
+	}
+	// Un ingreso administrativo tiene que salir como `admin`, no como `system`:
+	// es lo que decide si interrumpe a una persona (§6.4).
+	if event.Type != normalize.EventAdmin {
+		t.Fatalf("tipo = %s, se esperaba admin", event.Type)
+	}
+	if event.Action != normalize.ActionAllow {
+		t.Fatalf("acción = %s, se esperaba allow", event.Action)
+	}
+}
+
+func TestSystemEventWithoutAdminStaysSystem(t *testing.T) {
+	adapter := &Adapter{}
+
+	line := []byte(`date=2026-09-01 time=13:40:00 devname="FGT60F-LAB" type="event" subtype="system" ` +
+		`level="notice" logdesc="System started" action="start"`)
+
+	event, ok := adapter.ParseLog(line)
+	if !ok {
+		t.Fatal("la línea no se reconoció")
+	}
+	if event.Type != normalize.EventSystem {
+		t.Fatalf("tipo = %s: un reinicio no es actividad administrativa", event.Type)
 	}
 }
