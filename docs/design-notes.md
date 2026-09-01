@@ -1042,13 +1042,26 @@ configuración y ejecutar el colector: no se pierde nada que no estuviera perdid
 no hay DPAPI y la protección real son los permisos `0600` del archivo; está dicho así en el
 código y en la guía, sin fingir que es cifrado.
 
-**El instalador se eleva solo.** Pedir administrador al final, cuando el técnico ya llenó todo,
-es hacerle empezar de nuevo. El `.cmd` comprueba `net session` y se relanza con UAC antes de
-tocar nada.
+**El instalador no se eleva.** Se elevó al principio, por no pedir administrador al final
+cuando el técnico ya había llenado todo. Costó caro: un proceso elevado corre como otro usuario y
+pierde la VPN por la que el técnico llega al firewall —clientes como NetExtender montan el túnel
+por usuario—, así que el asistente abría y no podía conectar con nada. Ahora se eleva un solo
+paso, el de instalar el servicio, que es el único que lo necesita.
 
-**La configuración vive en `%ProgramData%`, no en `%LOCALAPPDATA%`.** Con elevación, LOCALAPPDATA
-es el del administrador y no el del técnico; y el colector corre como SYSTEM al arrancar con la
-máquina. Una ruta de máquina es la única que significa lo mismo para los tres.
+**La configuración vive en `%LOCALAPPDATA%`.** Estuvo en `%ProgramData%` mientras el instalador
+se elevaba, porque una ruta de máquina significa lo mismo para el administrador y para SYSTEM. Sin
+elevación deja de servir: la carpeta que creó un administrador no la puede escribir un usuario
+normal, y `curl` fallaba con un error de escritura que el instalador reportaba como "revisa tu
+conexión a internet". SYSTEM puede leer LOCALAPPDATA, así que el servicio sigue funcionando.
+
+**El instalador es ASCII puro.** `cmd.exe` lee el archivo con la tabla de caracteres del sistema,
+no en UTF-8: una tilde parte la línea y Windows ejecuta los pedazos como comandos —el técnico vio
+`'clientes' is not recognized as an internal or external command` antes de cualquier otra cosa—.
+El generador quita acentos en vez de confiar en que nadie escriba uno.
+
+**Regla:** cada decisión de esta lista se pagó con una instalación real fallida. Un instalador se
+prueba ejecutándolo como lo ejecuta el cliente —sin elevar, con su usuario, con su nombre de
+empresa acentuado— porque ninguno de estos tres fallos aparece leyendo el código.
 
 #### "Actividad" vacía sin explicar por qué
 

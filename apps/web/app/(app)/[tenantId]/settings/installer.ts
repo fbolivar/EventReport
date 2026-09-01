@@ -38,24 +38,19 @@ export function windowsInstaller({
   downloadUrl,
   tenantName,
 }: InstallerInput): string {
-// ProgramData y no LOCALAPPDATA: el colector corre como SYSTEM cuando arranca
-  // con la máquina, y una ruta de máquina es la única que significa lo mismo
-  // para el técnico y para el servicio.
-  const destino = `%ProgramData%${BACKSLASH}EventReport`;
+  // El archivo va en LOCALAPPDATA, no en ProgramData.
+  //
+  // El asistente corre sin elevar —un proceso elevado puede perder la VPN por
+  // la que el tecnico llega al firewall— y un usuario normal no siempre puede
+  // escribir en una carpeta de ProgramData que creo un administrador. El
+  // servicio corre como SYSTEM, que sí puede leer aquí.
+  const destino = `%LOCALAPPDATA%${BACKSLASH}EventReport`;
 
-  return [
+  const lines = [
     "@echo off",
     "setlocal",
-    "chcp 65001 > nul",
     "",
-    ":: NO se eleva aquí, a propósito.",
-    ":: Un proceso elevado corre en otro contexto de usuario y puede perder la",
-    ":: VPN con la que el técnico llega al firewall — NetExtender y otros",
-    ":: clientes montan el túnel por usuario. El asistente tiene que hablar con",
-    ":: el equipo, así que corre como quien lo instala; los permisos de",
-    ":: administrador se piden solo al final, para dejarlo arrancando solo.",
-    "",
-    `title Instalacion de EventReport - ${tenantName}`,
+    `title Instalacion de EventReport - ${ascii(tenantName)}`,
     "echo.",
     "echo   EventReport - instalacion del colector",
     "echo.",
@@ -68,7 +63,8 @@ export function windowsInstaller({
     `curl.exe -fsSL "${downloadUrl}" -o "%BINARIO%"`,
     "if errorlevel 1 (",
     "  echo.",
-    "  echo   No se pudo descargar el colector. Revisa la conexion a internet.",
+    "  echo   No se pudo descargar el colector.",
+    "  echo   Revisa la conexion a internet y vuelve a ejecutar este archivo.",
     "  echo.",
     "  pause",
     "  exit /b 1",
@@ -80,7 +76,24 @@ export function windowsInstaller({
     "",
     "pause",
     "",
-  ].join(CRLF);
+  ];
+
+  return lines.map(ascii).join(CRLF);
+}
+
+/**
+ * Quita acentos y cualquier carácter fuera de ASCII.
+ *
+ * `cmd.exe` lee el archivo con la tabla de caracteres del sistema, no en UTF-8:
+ * una tilde parte la línea y Windows intenta ejecutar los pedazos como
+ * comandos. Pasó en la primera instalación real —"'clientes' no se reconoce
+ * como un comando"— y por eso el instalador es ASCII puro, sin excepciones.
+ */
+function ascii(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7e]/g, "");
 }
 
 export function linuxInstaller({
