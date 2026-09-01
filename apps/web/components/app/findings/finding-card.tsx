@@ -14,12 +14,15 @@ export function FindingCard({
   rule,
   brand,
   remediation,
+  compact = false,
   className,
 }: {
   finding: Finding;
   rule: FindingRule;
   brand?: Brand;
   remediation?: string[];
+  /** Sin descripción de la regla: para listas densas y para el hero. */
+  compact?: boolean;
   className?: string;
 }) {
   const resolved = finding.status === "resolved";
@@ -39,10 +42,17 @@ export function FindingCard({
       </header>
 
       <h3 className={cn("mt-3 text-h3", resolved && "text-ink-soft")}>{rule.title}</h3>
-      <p className="mt-2 max-w-prose text-small text-ink-soft">{rule.description}</p>
+      {compact ? null : (
+        <p className="mt-2 max-w-prose text-small text-ink-soft">{rule.description}</p>
+      )}
 
       {finding.evidence.length > 0 ? (
-        <dl className="mt-4 grid gap-x-6 gap-y-1.5 border-t border-line pt-4 sm:grid-cols-[max-content_1fr]">
+        <dl
+          className={cn(
+            "grid gap-x-6 gap-y-1.5 sm:grid-cols-[max-content_1fr]",
+            compact ? "mt-3" : "mt-4 border-t border-line pt-4",
+          )}
+        >
           {finding.evidence.map((item) => (
             <div key={item.label} className="contents">
               <dt className="text-micro text-ink-soft">{item.label}</dt>

@@ -261,6 +261,37 @@ ilustración.
   comportamiento real (drawer, tabs, select del portal); lo que existe hoy es tipografía y color,
   y eso no necesita una dependencia.
 
+### Bloque 3 — landing (2026-08-31)
+
+- **La barra superior vive sobre tinta y se funde con el hero**: la parte alta del sitio es un
+  solo bloque oscuro y el resto es papel. Evita el sándwich de una barra blanca sobre un hero
+  oscuro y deja el peso visual donde está el argumento.
+- **El informe del hero son los componentes reales** (`PostureScore`, `FindingCard`,
+  `ControlMatrix`) con los fixtures del portal. Para que cupiera se agregó `compact` a
+  `FindingCard`, que oculta la descripción de la regla; se usa también en listas densas.
+- **La secuencia de carga es CSS puro**: `@keyframes er-build-in` más seis clases de retardo en
+  `globals.css`. Cero JavaScript, cero librería de animación, y el hero sigue siendo componente de
+  servidor. Con `prefers-reduced-motion` el bloque global de `globals.css` la anula y se ve el
+  estado final.
+- Alternancia de fondo `paper` / `mist` para separar secciones sin líneas ni tarjetas: problema
+  (papel), cómo funciona (niebla), lo que recibes (papel), cumplimiento (papel), marcas (niebla),
+  datos (papel), precios (papel), cierre (niebla).
+- El plan recomendado se distingue por borde tinta y botón primario, no por una etiqueta de color
+  ni por una tarjeta más alta.
+- Precios, disponibilidad de marcas, conteos de controles y correo de contacto quedaron marcados
+  con `// REVISAR` en `content/marketing.ts`.
+
+#### Auto-blindaje: rejillas sin columna base desbordan en móvil
+
+`grid ... lg:grid-cols-[...]` sin definir columnas en el ancho base deja la columna en `auto`.
+Con un hijo `max-w-prose` (68ch ≈ 600 px), la columna toma 600 px y la página desborda a 390 px,
+aunque ningún elemento se vea cortado. Se detectó midiendo `scrollWidth` contra `clientWidth`, no
+mirando la captura.
+
+**Regla:** toda rejilla que solo define columnas en un breakpoint lleva `grid-cols-1` en el ancho
+base (Tailwind lo traduce a `minmax(0,1fr)`, que sí encoge). Verificación en cada bloque:
+`document.documentElement.scrollWidth === clientWidth` a 390, 820 y 1440.
+
 #### Auto-blindaje: `tailwind-merge` borraba colores de texto
 
 `cn()` usaba `twMerge` con la configuración por defecto. Como nuestra escala tipográfica
