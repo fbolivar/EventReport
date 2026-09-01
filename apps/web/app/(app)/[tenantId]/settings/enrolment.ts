@@ -122,3 +122,28 @@ export async function revokeEnrolmentToken(
   revalidatePath(`/${tenantSlug}/settings`);
   return {};
 }
+
+/**
+ * Retira un colector.
+ *
+ * Instalar deja rastro: un intento fallido, una prueba, una máquina que se
+ * cambió. Sin forma de quitarlos, la lista se llena de colectores muertos y
+ * deja de significar nada. Los equipos que servía quedan sin colector, no se
+ * borran: sus hallazgos son historia del cliente.
+ */
+export async function removeCollector(
+  _previous: EnrolmentState,
+  formData: FormData,
+): Promise<EnrolmentState> {
+  const tenantSlug = String(formData.get("tenant") ?? "");
+  const collectorId = String(formData.get("collector") ?? "");
+  if (!tenantSlug || !collectorId) return { error: "Falta el colector." };
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("collectors").delete().eq("id", collectorId);
+  if (error) return { error: "No pudimos retirar el colector." };
+
+  revalidatePath(`/${tenantSlug}/settings`);
+  return {};
+}

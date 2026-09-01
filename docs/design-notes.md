@@ -1074,3 +1074,36 @@ hace falta y para lo que hace falta.
 
 **Regla:** pedir privilegios antes de necesitarlos no es prolijidad, es cambiar el entorno de todo
 lo que viene después. Se eleva lo que necesita elevación, y nada más.
+
+## Bloque 20 — Lo que la primera instalación real dejó al descubierto
+
+Cinco defectos, todos del mismo tipo: el producto sabía algo y no lo decía, o decía algo que no
+era cierto.
+
+**El puerto del syslog estaba cerrado.** Windows bloquea el tráfico entrante en los tres perfiles
+por defecto. El firewall del cliente enviaba sus registros contra un puerto cerrado y el portal
+mostraba "Actividad" vacía. Ahora la instalación del servicio —que ya pide administrador— abre
+UDP 514 en el mismo paso. No es una tarea aparte para el técnico: es parte de instalar.
+
+**El asistente decía `0.0.0.0:514`.** Nadie puede apuntar un firewall a esa dirección. El técnico
+tiene que adivinar cuál de sus interfaces es la buena, y adivinó mal —yo también, al recomendarle
+la del adaptador equivocado—. Ahora el colector lista **sus IP reales** y dice cuál criterio usar:
+la de la red por la que se llega al firewall.
+
+**El portal mostraba una IP de ejemplo.** El asistente de Ajustes traía `10.10.0.9` escrita a
+mano. Alguien la copia. Ahora muestra la dirección real del colector, que llega en el latido, y si
+no hay colector todavía lo dice en vez de inventar una.
+
+**No se podían quitar colectores.** Instalar deja rastro: un intento fallido, una prueba, una
+máquina que se cambió. Sin forma de retirarlos, la lista se llena de colectores muertos y deja de
+significar nada.
+
+**No se podía dar de alta un cliente.** El portal servía a las empresas que alguien hubiera
+sembrado en la base. Para un proveedor que vende a varias PYMES eso no es un detalle, es la mitad
+del producto. `create_tenant` crea la empresa, la membresía de quien la crea, los cupos de su plan
+y su primera sede: una función que lo hace entero, porque hacerlo en cuatro pasos deja empresas a
+medias cuando uno falla —y una empresa sin cupos rechaza la primera ingesta sin explicar por qué.
+
+**Regla de todo el bloque:** cuando el producto depende de un dato que solo él conoce —una IP, un
+puerto, un estado—, decirlo es parte del trabajo. Y cuando no lo conoce, decir que no lo conoce,
+en vez de poner un ejemplo que alguien copiará.

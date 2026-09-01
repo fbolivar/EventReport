@@ -8,6 +8,7 @@ import { Value } from "@/components/shared/value";
 import { COLLECTOR_STATUS_LABELS } from "@/content/labels";
 import { listMsspRows } from "@/lib/data/mssp";
 import { byAttention } from "@/lib/mssp/attention";
+import { NewTenant } from "./new-tenant";
 import { formatSince } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 import { scoreKey, SEVERITY_CLASSES } from "@/lib/utils/severity";
@@ -47,6 +48,7 @@ export default async function MsspPage() {
       <main className="mx-auto max-w-app px-6 py-8 lg:px-10 lg:py-10">
         <div className="space-y-8">
           <PageHeader
+            action={<NewTenant />}
             title="Clientes"
             meta={[
               `${rows.length} ${rows.length === 1 ? "empresa" : "empresas"}`,

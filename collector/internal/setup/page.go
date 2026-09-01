@@ -173,10 +173,20 @@ $("conectar").onclick = async () => {
     $("t2").textContent = "Firewall conectado: " + result.hostname;
     $("t3").textContent = "Midiendo.";
     $("servicio").hidden = false;
+    const destinos = (result.syslogTargets || []).map((ip) => ip + ":514").join("  ·  ");
     say(
-      "Listo. El colector ya está midiendo: en unos minutos verás tu firewall en el portal.\n\n" +
-        "Deja abierta la ventana negra de la instalación — ahí corre el colector.\n" +
-        "Falta un paso en el equipo: apunta su syslog a " + result.syslogAddr + ".",
+      "Listo. El colector ya está midiendo: en unos minutos verás tu firewall en el portal.
+
+" +
+        "Falta un paso en el firewall: apunta su syslog a esta máquina.
+" +
+        (destinos ? "Direcciones de este equipo:  " + destinos + "
+" : "") +
+        "Usa la que esté en la misma red por la que llegas al firewall.
+
+" +
+        "Instálalo abajo: además de dejarlo arrancando solo, abre el puerto 514 en el " +
+        "firewall de Windows, que por defecto lo bloquea.",
       "ok",
     );
   } catch (error) {

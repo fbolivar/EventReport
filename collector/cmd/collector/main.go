@@ -420,10 +420,11 @@ func (c *collectorDevice) Connect(ctx context.Context, host, token, passphrase s
 	c.started <- passphrase
 
 	return setup.Identity{
-		Hostname:   snapshot.Device.Hostname,
-		Model:      snapshot.Device.Model,
-		Firmware:   snapshot.Device.Firmware,
-		SyslogAddr: file.SyslogAddr,
+		Hostname:      snapshot.Device.Hostname,
+		Model:         snapshot.Device.Model,
+		Firmware:      snapshot.Device.Firmware,
+		SyslogAddr:    file.SyslogAddr,
+		SyslogTargets: setup.LocalAddresses(),
 	}, nil
 }
 
@@ -880,6 +881,11 @@ func sendPending(
 		"diskFreeGb":       0,
 		"clockSkewSeconds": skew,
 		"unparsed":         unparsed,
+		// Las direcciones de esta máquina: es lo que el portal necesita para
+		// decirle al técnico a dónde apuntar el syslog del firewall. Sin esto,
+		// el asistente del portal mostraba una IP de ejemplo y alguien la
+		// copiaba tal cual.
+		"addresses": setup.LocalAddresses(),
 	}
 	if _, err := client.Post(ctx, "heartbeat", heartbeat); err != nil {
 		logger.Warn("heartbeat sin respuesta", "error", err)

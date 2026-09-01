@@ -19,6 +19,8 @@ interface HeartbeatBody {
   queueDepth: number;
   diskFreeGb: number;
   clockSkewSeconds: number;
+  /** IPs de la máquina del colector: el portal las muestra para el syslog. */
+  addresses?: string[];
 }
 
 function isHeartbeatBody(value: unknown): value is HeartbeatBody {
@@ -67,9 +69,20 @@ Deno.serve(
     const stillMeasuring = Date.now() - measuringSince < 24 * 60 * 60 * 1000;
     const status = current?.status === "measuring" && stillMeasuring ? "measuring" : "active";
 
+    // Las direcciones viajan en el latido y se guardan en `config`: el portal
+    // las usa para decirle al técnico a dónde apuntar el syslog del firewall.
+    const addresses = Array.isArray(body.addresses)
+      ? body.addresses.filter((item) => typeof item === "string").slice(0, 8)
+      : undefined;
+
     await context.admin
       .from("collectors")
-      .update({ last_seen_at: now, version: body.version, status })
+      .update({
+        last_seen_at: now,
+        version: body.version,
+        status,
+        ...(addresses ? { config: { syslogTargets: addresses } } : {}),
+      })
       .eq("id", context.collectorId);
 
     // Las órdenes llegan en la fase 5 (evidencia bajo demanda, cambio de

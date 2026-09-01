@@ -30,6 +30,11 @@ type Identity struct {
 	Firmware string `json:"firmware"`
 	// SyslogAddr es lo único que queda por hacer en el equipo.
 	SyslogAddr string `json:"syslogAddr"`
+	// SyslogTargets son las direcciones IP de esta máquina, que es lo que el
+	// técnico tiene que escribir en el firewall. Decir "0.0.0.0:514" no sirve:
+	// nadie puede apuntar a esa dirección, y adivinarla lleva a apuntar a la
+	// interfaz equivocada — pasó en la primera instalación real.
+	SyslogTargets []string `json:"syslogTargets"`
 }
 
 type State struct {
@@ -166,6 +171,44 @@ func decode(w http.ResponseWriter, r *http.Request) (request, bool) {
 		return request{}, false
 	}
 	return body, true
+}
+
+// LocalAddresses lista las IPv4 de esta máquina, sin loopback.
+//
+// El orden importa: primero las de rangos privados, que son por las que un
+// firewall de la misma red o de un túnel va a poder responder.
+func LocalAddresses() []string {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+
+	var out []string
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+
+		addresses, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+
+		for _, address := range addresses {
+			ipNet, ok := address.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip := ipNet.IP.To4()
+			// Las 169.254.x son de "no conseguí dirección": ofrecerlas manda al
+			// técnico a apuntar el firewall a una interfaz muerta.
+			if ip == nil || ip.IsLinkLocalUnicast() {
+				continue
+			}
+			out = append(out, ip.String())
+		}
+	}
+	return out
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

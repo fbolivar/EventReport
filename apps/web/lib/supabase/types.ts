@@ -1248,6 +1248,16 @@ export type Database = {
     Functions: {
       is_tenant_admin: { Args: { p_tenant_id: string }; Returns: boolean }
       is_tenant_member: { Args: { p_tenant_id: string }; Returns: boolean }
+      create_tenant: {
+        Args: {
+          p_name: string
+          p_slug: string
+          p_plan?: Database["public"]["Enums"]["plan_code"]
+          p_site?: string
+          p_city?: string
+        }
+        Returns: string
+      }
       tenant_member_profiles: {
         Args: { p_tenant_id?: string }
         Returns: {

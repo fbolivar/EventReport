@@ -64,9 +64,35 @@ func Install(binary, configPath string) error {
 		return fmt.Errorf("no se pudo registrar la tarea: %s", strings.TrimSpace(output))
 	}
 
+	// El puerto del syslog, en el mismo paso elevado.
+	//
+	// Windows bloquea el tráfico entrante por defecto en los tres perfiles, así
+	// que sin esta regla el firewall del cliente envía sus registros a un puerto
+	// cerrado y el portal muestra "Actividad" vacía sin que nadie entienda por
+	// qué. Es parte de instalar, no una tarea aparte para el técnico.
+	if err := OpenSyslogPort(); err != nil {
+		return err
+	}
+
 	// Arrancarla ya, en vez de esperar al próximo reinicio.
 	if _, err := run("schtasks", "/run", "/tn", Name); err != nil {
 		return fmt.Errorf("la tarea quedó registrada pero no arrancó: reinicia el equipo")
+	}
+	return nil
+}
+
+// OpenSyslogPort permite UDP 514 entrante. Requiere administrador.
+func OpenSyslogPort() error {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+
+	output, err := run("netsh", "advfirewall", "firewall", "add", "rule",
+		"name=EventReport syslog",
+		"dir=in", "action=allow", "protocol=UDP", "localport=514",
+	)
+	if err != nil {
+		return fmt.Errorf("no se pudo abrir el puerto 514 del firewall de Windows: %s", strings.TrimSpace(output))
 	}
 	return nil
 }

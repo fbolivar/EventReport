@@ -20,6 +20,7 @@ import {
 } from "@/lib/data/tenant";
 import { formatDateTime, formatSince } from "@/lib/utils/format";
 import { EnrolmentForm } from "./enrolment-form";
+import { RemoveCollector } from "./remove-collector";
 import { InviteForm } from "./invite-form";
 
 export const metadata: Metadata = { title: "Ajustes" };
@@ -53,6 +54,11 @@ export default async function SettingsPage({
   const now = new Date().toISOString();
   const siteById = (id: string) => sites.find((site) => site.id === id);
 
+  // La dirección que el firewall tiene que usar es la del colector de verdad.
+  // Si todavía no hay ninguno, el asistente lo dice en vez de mostrar un
+  // ejemplo que alguien va a copiar tal cual.
+  const collectorIp = collectors.length > 0 ? (collectors[0]?.address ?? "") : "";
+
   return (
     <div className="space-y-8">
       <PageHeader
@@ -71,7 +77,7 @@ export default async function SettingsPage({
           <OnboardingWizard
             brands={WIZARD_BRANDS}
             current={currentBrand}
-            collectorIp="10.10.0.9"
+            collectorIp={collectorIp}
             basePath={`/${tenantId}/settings`}
           />
         </SurfaceBody>
@@ -162,6 +168,7 @@ export default async function SettingsPage({
                       Último contacto {formatSince(collector.health.lastSeenAt, now)} · bóveda de{" "}
                       <Value>{collector.health.vaultDays}</Value> días
                     </p>
+                    <RemoveCollector tenantId={tenantId} collectorId={collector.id} />
                   </li>
                 );
               })}
