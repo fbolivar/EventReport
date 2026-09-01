@@ -1,10 +1,12 @@
 import { revalidatePath } from "next/cache";
 import type { FrameworkCode, ReportType } from "@eventreport/schema";
 
+import { buildChangesInput } from "@/lib/reports/changes";
 import { buildComplianceInput } from "@/lib/reports/compliance";
 import { buildHardeningInput } from "@/lib/reports/hardening";
 import { buildReportInput } from "@/lib/reports/input";
 import { renderExecutiveReport } from "@/lib/reports/pdf";
+import { renderChangesReport } from "@/lib/reports/pdf-changes";
 import { renderComplianceReport } from "@/lib/reports/pdf-compliance";
 import { renderHardeningReport } from "@/lib/reports/pdf-hardening";
 import { writeSections } from "@/lib/reports/sections";
@@ -71,6 +73,12 @@ async function render(job: RenderJob): Promise<{ pdf: Buffer; pages: number }> {
     const input = await buildHardeningInput(job.tenantSlug, job.start, job.end);
     if (!input) throw new Error("sin datos para el informe de hardening");
     return { pdf: await renderHardeningReport(input), pages: 1 + Math.ceil(input.items.length / 4) };
+  }
+
+  if (job.type === "changes") {
+    const input = await buildChangesInput(job.tenantSlug, job.start, job.end);
+    if (!input) throw new Error("sin datos para el informe de cambios");
+    return { pdf: await renderChangesReport(input), pages: 1 + Math.ceil(input.lines.length / 6) };
   }
 
   if (job.type === "compliance" && job.framework) {

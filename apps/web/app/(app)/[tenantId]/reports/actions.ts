@@ -14,7 +14,7 @@ export interface GenerateState {
 }
 
 /** Tipos que el portal sabe generar hoy. Los demás están en el diseño, no en el código. */
-const SUPPORTED: ReportType[] = ["executive", "hardening", "compliance"];
+const SUPPORTED: ReportType[] = ["executive", "hardening", "compliance", "changes"];
 
 /**
  * Pide un informe.

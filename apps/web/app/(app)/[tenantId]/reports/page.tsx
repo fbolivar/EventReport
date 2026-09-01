@@ -65,6 +65,12 @@ export default async function ReportsPage({
           <div className="flex flex-wrap items-center gap-3">
             <GenerateReportButton
               tenantId={tenantId}
+              type="changes"
+              label="Cambios"
+              variant="secondary"
+            />
+            <GenerateReportButton
+              tenantId={tenantId}
               type="hardening"
               label="Hardening"
               variant="secondary"

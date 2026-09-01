@@ -17,6 +17,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.122.0
         version: 0.122.0(zod@4.5.4)
+      '@eventreport/rules':
+        specifier: workspace:*
+        version: link:../../packages/rules
       '@eventreport/schema':
         specifier: workspace:*
         version: link:../../packages/schema

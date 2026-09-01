@@ -609,3 +609,56 @@ firmware > Backup & restore.
 **Regla:** una ruta de menú es un dato con versión, no una constante. Cada vez que se agregue una
 marca o se suba una versión mayor de firmware, el catálogo se revisa contra la documentación del
 fabricante y la fecha de la revisión queda escrita aquí.
+
+## Bloque 12 — Cambios de configuración
+
+Guardábamos snapshots desde el primer día y nadie los comparaba nunca. `diffConfigs()`
+(`packages/rules/src/diff.ts`) los convierte en la bitácora del firewall, y `ingest-config` la
+escribe en `config_changes` cada vez que llega un snapshot nuevo.
+
+Cómo compara, y por qué así:
+
+- **Por identidad, no por texto.** Una política se sigue por su `id`, un administrador por su
+  nombre. Reordenar la lista no es un cambio.
+- **Solo los campos que importan.** Que un contador de aciertos suba no es un cambio de
+  configuración; llenar la bitácora de ruido es la forma más rápida de que nadie la lea.
+- **Ninguna credencial entra en el diff**: ni PSK, ni comunidad SNMP, ni token. De `auth` viaja el
+  método ("psk", "cert"), nunca la clave. Hay una prueba que falla si algo de eso aparece.
+- **La posición de una política sí es un cambio**: el orden decide cuál coincide primero, así que
+  mover una regla hacia arriba puede abrir un permiso sin editar ninguna.
+
+El informe (`changes`) es a demanda, no programado: el §10 no lo incluye en ningún plan. Como el
+hardening y el cumplimiento, no lo redacta el modelo — es un registro, y un registro que se
+redacta distinto cada vez no sirve de registro. Los cambios sin autor se cuentan aparte en la
+portada: son los que abren OP-004 y los que el auditor pregunta uno por uno.
+
+#### Tres fallos que solo aparecieron probando contra la función desplegada
+
+**El orden de un conjunto se reportaba como cambio.** Los perfiles de inspección salían como
+"av, ips, web, appCtl → ips, av, web, appCtl": el mismo conjunto en otro orden. Ahora las listas
+se ordenan antes de comparar. **Regla:** en un diff, una lista sin orden semántico se compara como
+conjunto.
+
+**Un snapshot que llega tarde invertía el diff.** La función comparaba contra el snapshot más
+reciente de la tabla, no contra el anterior a la hora del que llega. El colector guarda en búfer y
+sube con retraso por diseño (§6.7), así que esto no es hipotético: una subida atrasada reportaba
+como cambio nuevo lo que ya se había corregido. Ahora la consulta lleva
+`.lt("collected_at", collectedAt)`.
+
+**La flecha entre el valor viejo y el nuevo se imprimía como un glifo vacío.** El mismo fallo de
+WinAnsi del bloque 10, en un sitio nuevo: `pdfText()` estaba aplicado a los valores, pero la
+flecha iba suelta en el JSX. **Regla:** en un PDF, el texto literal del JSX también pasa por
+`pdfText()` si no es ASCII; no basta con envolver las variables.
+
+#### Auto-blindaje: el servidor de desarrollo sirviendo un módulo viejo
+
+El informe de cambios salía siendo el ejecutivo. El código enrutaba bien, la fila decía
+`type: changes` y el PDF era otro. La causa no estaba en el código: `pnpm dev` seguía ejecutando
+la versión anterior de `lib/reports/render.ts` —los cambios en componentes sí se recargaban, los
+de un módulo del servidor usado dentro de `after()` no—. Se descubrió metiendo un `console.error`
+que **nunca apareció** en el registro: eso, y no el PDF, fue lo que probó que el archivo editado
+no se estaba ejecutando.
+
+**Regla:** si un cambio en código de servidor parece no surtir efecto, lo primero es reiniciar
+`pnpm dev` y volver a probar; recién después se depura el código. Y para confirmar que una rama
+nueva se ejecuta, un rastro que se pueda ver vale más que mirar el resultado.

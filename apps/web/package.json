@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
+    "@eventreport/rules": "workspace:*",
     "@eventreport/schema": "workspace:*",
     "@react-pdf/renderer": "^4.9.0",
     "@supabase/ssr": "^0.7.0",
