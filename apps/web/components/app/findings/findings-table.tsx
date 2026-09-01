@@ -1,11 +1,9 @@
 import Link from "next/link";
-import type { Finding } from "@eventreport/schema";
+import type { Finding, FindingRule, Firewall } from "@eventreport/schema";
 
 import { SeverityBadge } from "@/components/app/findings/severity-badge";
 import { Value } from "@/components/shared/value";
 import { BRAND_LABELS } from "@/content/labels";
-import { RULES_BY_CODE } from "@/lib/fixtures/rules";
-import { firewallById } from "@/lib/fixtures/tenant";
 import { formatDateShort } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 
@@ -15,10 +13,14 @@ import { cn } from "@/lib/utils/cn";
  */
 export function FindingsTable({
   findings,
+  rules,
+  firewalls,
   selectedId,
   hrefFor,
 }: {
   findings: Finding[];
+  rules: Record<string, FindingRule>;
+  firewalls: Firewall[];
   selectedId?: string;
   hrefFor: (findingId: string) => string;
 }) {
@@ -43,8 +45,8 @@ export function FindingsTable({
       </thead>
       <tbody>
         {findings.map((finding) => {
-          const rule = RULES_BY_CODE[finding.ruleCode];
-          const firewall = firewallById(finding.firewallId);
+          const rule = rules[finding.ruleCode];
+          const firewall = firewalls.find((item) => item.id === finding.firewallId);
           const isSelected = finding.id === selectedId;
 
           return (

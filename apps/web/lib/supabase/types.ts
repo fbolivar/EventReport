@@ -1156,6 +1156,18 @@ export type Database = {
     Functions: {
       is_tenant_admin: { Args: { p_tenant_id: string }; Returns: boolean }
       is_tenant_member: { Args: { p_tenant_id: string }; Returns: boolean }
+      tenant_member_profiles: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          id: string
+          tenant_id: string
+          user_id: string
+          role: Database["public"]["Enums"]["member_role"]
+          email: string | null
+          full_name: string | null
+          last_seen_at: string | null
+        }[]
+      }
     }
     Enums: {
       brand:

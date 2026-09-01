@@ -7,7 +7,7 @@
  */
 import type { EventType, HourlyRollup, TopNDimension } from "@eventreport/schema";
 
-import { NOW } from "@/lib/fixtures/tenant";
+import { NOW } from "./tenant.ts";
 
 const HOUR_MS = 3_600_000;
 

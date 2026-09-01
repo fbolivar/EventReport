@@ -9,8 +9,9 @@ import { EmptyState } from "@/components/shared/states";
 import { ButtonLink } from "@/components/shared/button";
 import { Surface } from "@/components/shared/surface";
 import { SEVERITY_LABELS } from "@/content/labels";
-import { DEMO_FINDINGS, findingById } from "@/lib/fixtures/findings";
-import { DEMO_FIREWALLS } from "@/lib/fixtures/tenant";
+import { listFindings, remediationFor, rulesByCode } from "@/lib/data/findings";
+import { listRuleControls } from "@/lib/data/compliance";
+import { listFirewalls } from "@/lib/data/tenant";
 
 export const metadata: Metadata = { title: "Hallazgos" };
 
@@ -31,19 +32,33 @@ export default async function FindingsPage({
   const severity = search.severity ?? "all";
   const firewall = search.firewall ?? "all";
 
-  const visible = DEMO_FINDINGS.filter((finding) => {
+  const [allFindings, rules, firewalls, ruleControls] = await Promise.all([
+    listFindings(),
+    rulesByCode(),
+    listFirewalls(),
+    listRuleControls(),
+  ]);
+
+  const visible = allFindings.filter((finding) => {
     if (status !== "all" && finding.status !== status) return false;
     if (severity !== "all" && finding.severity !== severity) return false;
     if (firewall !== "all" && finding.firewallId !== firewall) return false;
     return true;
   });
 
-  const selected = search.finding ? findingById(search.finding) : undefined;
+  const selected = search.finding
+    ? allFindings.find((finding) => finding.id === search.finding)
+    : undefined;
+  const selectedFirewall = selected
+    ? firewalls.find((item) => item.id === selected.firewallId)
+    : undefined;
+  const steps =
+    selected && selectedFirewall
+      ? await remediationFor(selected.ruleCode, selectedFirewall.brand)
+      : undefined;
 
   const countBy = (predicate: (severity: Severity) => boolean) =>
-    DEMO_FINDINGS.filter(
-      (finding) => finding.status === status && predicate(finding.severity),
-    ).length;
+    allFindings.filter((finding) => finding.status === status && predicate(finding.severity)).length;
 
   const asQuery = (overrides: Partial<Search>) => {
     const next = new URLSearchParams();
@@ -60,7 +75,7 @@ export default async function FindingsPage({
     <div className="space-y-8">
       <PageHeader
         title="Hallazgos"
-        meta={`${visible.length} de ${DEMO_FINDINGS.length} · cada uno con evidencia y remediación de la marca`}
+        meta={`${visible.length} de ${allFindings.length} · cada uno con evidencia y remediación de la marca`}
         action={
           <ButtonLink href={`/${tenantId}/reports`} variant="secondary">
             Informe de hardening
@@ -103,16 +118,18 @@ export default async function FindingsPage({
           current={firewall}
           options={[
             { value: "all", label: "Todos los equipos" },
-            ...DEMO_FIREWALLS.map((item) => ({ value: item.id, label: item.hostname })),
+            ...firewalls.map((item) => ({ value: item.id, label: item.hostname })),
           ]}
         />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
         <Surface className="px-5 py-2">
           {visible.length > 0 ? (
             <FindingsTable
               findings={visible}
+              rules={rules}
+              firewalls={firewalls}
               selectedId={selected?.id}
               hrefFor={(findingId) => asQuery({ finding: findingId })}
             />
@@ -130,7 +147,14 @@ export default async function FindingsPage({
         </Surface>
 
         {selected ? (
-          <FindingDrawer finding={selected} closeHref={asQuery({ finding: undefined })} />
+          <FindingDrawer
+            finding={selected}
+            rule={rules[selected.ruleCode]}
+            firewall={selectedFirewall}
+            remediation={steps}
+            ruleControls={ruleControls}
+            closeHref={asQuery({ finding: undefined })}
+          />
         ) : (
           <Surface className="hidden px-5 py-10 lg:block">
             <p className="text-small text-ink-soft">

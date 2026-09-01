@@ -9,13 +9,8 @@ import { PageHeader } from "@/components/app/shell/page-header";
 import { ButtonLink } from "@/components/shared/button";
 import { Surface, SurfaceBody, SurfaceHeader } from "@/components/shared/surface";
 import { FRAMEWORK_SHORT_LABELS } from "@/content/labels";
-import {
-  assessmentsFor,
-  controlsFor,
-  coverageFor,
-  frameworkByCode,
-} from "@/lib/fixtures/compliance";
-import { DEMO_TENANT } from "@/lib/fixtures/tenant";
+import { assessmentsFor, controlsFor, coverageFor, listFrameworks } from "@/lib/data/compliance";
+import { getTenant } from "@/lib/data/tenant";
 
 export const metadata: Metadata = { title: "Cumplimiento" };
 
@@ -34,14 +29,18 @@ export default async function CompliancePage({
   const { framework: requested } = await searchParams;
 
   // Solo los marcos que el tenant declaró aplicables (§15.5).
-  const active = DEMO_TENANT.frameworks;
+  const tenant = await getTenant(tenantId);
+  const active = tenant?.frameworks ?? [];
   const current: FrameworkCode =
     isFrameworkCode(requested) && active.includes(requested) ? requested : (active[0] ?? "iso27001");
 
-  const framework = frameworkByCode(current);
-  const controls = controlsFor(current);
-  const assessments = assessmentsFor(current);
-  const coverage = coverageFor(current);
+  const [frameworks, controls, assessments, coverage] = await Promise.all([
+    listFrameworks(),
+    controlsFor(current),
+    assessmentsFor(current),
+    coverageFor(current),
+  ]);
+  const framework = frameworks.find((item) => item.code === current);
 
   return (
     <div className="space-y-8">
@@ -73,11 +72,13 @@ export default async function CompliancePage({
           meta={`Versión ${framework?.version ?? ""}`}
         />
         <SurfaceBody className="space-y-6">
-          <ScopeNote
-            frameworkName={framework?.name ?? current}
-            coverage={coverage}
-            note={framework?.scopeNote ?? ""}
-          />
+          {coverage ? (
+            <ScopeNote
+              frameworkName={framework?.name ?? current}
+              coverage={coverage}
+              note={framework?.scopeNote ?? ""}
+            />
+          ) : null}
           <ControlMatrix controls={controls} assessments={assessments} />
         </SurfaceBody>
       </Surface>

@@ -9,16 +9,8 @@ import { Surface, SurfaceBody, SurfaceHeader } from "@/components/shared/surface
 import { Value } from "@/components/shared/value";
 import { BRAND_LABELS, FRAMEWORK_LABELS, MEMBER_ROLE_LABELS } from "@/content/labels";
 import { BRAND_INSTRUCTIONS } from "@/content/onboarding";
-import { DEMO_FRAMEWORKS } from "@/lib/fixtures/compliance";
-import {
-  DEMO_COLLECTORS,
-  DEMO_FIREWALLS,
-  DEMO_MEMBERS,
-  DEMO_SITES,
-  DEMO_TENANT,
-  NOW,
-  siteById,
-} from "@/lib/fixtures/tenant";
+import { listFrameworks } from "@/lib/data/compliance";
+import { getTenant, listCollectors, listFirewalls, listMembers, listSites } from "@/lib/data/tenant";
 import { formatSince } from "@/lib/utils/format";
 
 export const metadata: Metadata = { title: "Ajustes" };
@@ -37,11 +29,23 @@ export default async function SettingsPage({
   const currentBrand: Brand =
     WIZARD_BRANDS.find((item) => item === brand) ?? WIZARD_BRANDS[0] ?? "fortigate";
 
+  const [tenant, sites, firewalls, collectors, members, frameworks] = await Promise.all([
+    getTenant(tenantId),
+    listSites(),
+    listFirewalls(),
+    listCollectors(),
+    listMembers(),
+    listFrameworks(),
+  ]);
+
+  const now = new Date().toISOString();
+  const siteById = (id: string) => sites.find((site) => site.id === id);
+
   return (
     <div className="space-y-8">
       <PageHeader
         title="Ajustes"
-        meta={`${DEMO_TENANT.name} · plan ${DEMO_TENANT.plan} · ${DEMO_SITES.length} sedes`}
+        meta={`${tenant?.name ?? ""} · plan ${tenant?.plan ?? ""} · ${sites.length} sedes`}
       />
 
       <Surface>
@@ -61,10 +65,10 @@ export default async function SettingsPage({
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Surface>
-          <SurfaceHeader title="Equipos" meta={`${DEMO_FIREWALLS.length} firewalls conectados`} />
+          <SurfaceHeader title="Equipos" meta={`${firewalls.length} firewalls conectados`} />
           <SurfaceBody className="py-0">
             <ul className="divide-y divide-line">
-              {DEMO_FIREWALLS.map((firewall) => {
+              {firewalls.map((firewall) => {
                 const site = siteById(firewall.siteId);
                 const unevaluable = firewall.capabilities.unevaluableRules;
                 return (
@@ -108,7 +112,7 @@ export default async function SettingsPage({
           <SurfaceHeader title="Colectores" meta="Uno por sede" />
           <SurfaceBody className="py-0">
             <ul className="divide-y divide-line">
-              {DEMO_COLLECTORS.map((collector) => {
+              {collectors.map((collector) => {
                 const site = siteById(collector.siteId);
                 return (
                   <li key={collector.id} className="py-4">
@@ -120,7 +124,7 @@ export default async function SettingsPage({
                       <Value>{collector.health.version}</Value>
                     </p>
                     <p className="mt-1 text-micro text-ink-soft">
-                      Último contacto {formatSince(collector.health.lastSeenAt, NOW)} · bóveda de{" "}
+                      Último contacto {formatSince(collector.health.lastSeenAt, now)} · bóveda de{" "}
                       <Value>{collector.health.vaultDays}</Value> días
                     </p>
                   </li>
@@ -133,7 +137,7 @@ export default async function SettingsPage({
         <Surface>
           <SurfaceHeader
             title="Personas"
-            meta={`${DEMO_MEMBERS.length} con acceso`}
+            meta={`${members.length} con acceso`}
             action={
               <Button variant="secondary" size="sm">
                 Invitar
@@ -142,7 +146,7 @@ export default async function SettingsPage({
           />
           <SurfaceBody className="py-0">
             <ul className="divide-y divide-line">
-              {DEMO_MEMBERS.map((member) => (
+              {members.map((member) => (
                 <li key={member.id} className="flex items-center justify-between gap-4 py-3">
                   <div className="min-w-0">
                     <p className="truncate text-small">{member.fullName}</p>
@@ -166,8 +170,8 @@ export default async function SettingsPage({
           />
           <SurfaceBody className="py-0">
             <ul className="divide-y divide-line">
-              {DEMO_FRAMEWORKS.map((framework) => {
-                const isActive = DEMO_TENANT.frameworks.includes(framework.code);
+              {frameworks.map((framework) => {
+                const isActive = tenant?.frameworks.includes(framework.code) ?? false;
                 return (
                   <li key={framework.code} className="flex items-start justify-between gap-4 py-3">
                     <div className="min-w-0">

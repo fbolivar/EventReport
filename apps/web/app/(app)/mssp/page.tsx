@@ -6,8 +6,7 @@ import { Logo } from "@/components/shared/logo";
 import { Surface } from "@/components/shared/surface";
 import { Value } from "@/components/shared/value";
 import { COLLECTOR_STATUS_LABELS } from "@/content/labels";
-import { DEMO_MSSP_ROWS } from "@/lib/fixtures/mssp";
-import { NOW } from "@/lib/fixtures/tenant";
+import { listMsspRows } from "@/lib/data/mssp";
 import { formatSince } from "@/lib/utils/format";
 import { cn } from "@/lib/utils/cn";
 import { scoreKey, SEVERITY_CLASSES } from "@/lib/utils/severity";
@@ -22,8 +21,9 @@ const STATUS_DOT = {
 } as const;
 
 /** Vista multicliente: quién necesita atención hoy, ordenado por score. */
-export default function MsspPage() {
-  const rows = [...DEMO_MSSP_ROWS].sort((a, b) => a.score - b.score);
+export default async function MsspPage() {
+  const rows = (await listMsspRows()).sort((a, b) => a.score - b.score);
+  const now = new Date().toISOString();
   const criticalTotal = rows.reduce((sum, row) => sum + row.critical, 0);
 
   return (
@@ -109,7 +109,7 @@ export default function MsspPage() {
                     </td>
                     <td className="hidden py-3 text-right md:table-cell">
                       <Value className="text-micro text-ink-soft">
-                        {formatSince(row.lastReport, NOW)}
+                        {row.lastReport ? formatSince(row.lastReport, now) : "—"}
                       </Value>
                     </td>
                   </tr>
@@ -119,8 +119,8 @@ export default function MsspPage() {
           </Surface>
 
           <p className="max-w-prose text-small text-ink-soft">
-            Ordenados por postura, de menor a mayor: arriba está quien necesita atención hoy. Solo
-            Acme tiene datos completos en esta versión con fixtures.
+            Ordenados por postura, de menor a mayor: arriba está quien necesita atención hoy. La
+            lista sale de RLS: aparecen exactamente las empresas de las que eres miembro.
           </p>
         </div>
       </main>

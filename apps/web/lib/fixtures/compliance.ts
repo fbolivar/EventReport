@@ -7,10 +7,10 @@
  */
 import type { ComplianceAssessment, FrameworkCode, FrameworkCoverage } from "@eventreport/schema";
 
-import { controlsFor, DEMO_FRAMEWORKS, frameworkByCode } from "@/lib/fixtures/catalog";
-import { DEMO_FINDINGS } from "@/lib/fixtures/findings";
-import { RULE_CONTROLS } from "@/lib/fixtures/rule-controls";
-import { DEMO_FIREWALLS } from "@/lib/fixtures/tenant";
+import { controlsFor, DEMO_FRAMEWORKS, frameworkByCode } from "./catalog.ts";
+import { DEMO_FINDINGS } from "./findings.ts";
+import { RULE_CONTROLS } from "./rule-controls.ts";
+import { DEMO_FIREWALLS } from "./tenant.ts";
 
 export { controlsFor, DEMO_FRAMEWORKS, frameworkByCode };
 

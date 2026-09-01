@@ -1,19 +1,24 @@
-import type { CriticalEvent } from "@eventreport/schema";
+import type { CriticalEvent, Firewall } from "@eventreport/schema";
 
 import { SeverityBadge } from "@/components/app/findings/severity-badge";
 import { Value } from "@/components/shared/value";
 import { formatDateTime } from "@/lib/utils/format";
-import { firewallById } from "@/lib/fixtures/tenant";
 
 /**
  * Eventos críticos recientes (§6.4). Los que no tienen fecha de tratamiento
  * son los que abren OP-002 a los siete días.
  */
-export function CriticalEventList({ events }: { events: CriticalEvent[] }) {
+export function CriticalEventList({
+  events,
+  firewalls,
+}: {
+  events: CriticalEvent[];
+  firewalls: Firewall[];
+}) {
   return (
     <ul className="divide-y divide-line">
       {events.map((event) => {
-        const firewall = firewallById(event.firewallId);
+        const firewall = firewalls.find((item) => item.id === event.firewallId);
         return (
           <li key={event.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-3">
             <Value className="w-32 shrink-0 text-micro text-ink-soft">

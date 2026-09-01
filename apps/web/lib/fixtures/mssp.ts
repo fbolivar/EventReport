@@ -4,8 +4,8 @@
  */
 import type { CollectorHealth, PlanCode } from "@eventreport/schema";
 
-import { DEMO_SCORE } from "@/lib/fixtures/posture";
-import { openCountsBySeverity } from "@/lib/fixtures/findings";
+import { DEMO_SCORE } from "./posture.ts";
+import { openCountsBySeverity } from "./findings.ts";
 
 export interface MsspRow {
   tenantId: string;
