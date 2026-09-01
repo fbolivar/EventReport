@@ -19,18 +19,38 @@ const STATUS_DOT: Record<CollectorHealth["status"], string> = {
 export function CollectorStatus({
   name,
   health,
+  measuringSince,
   className,
 }: {
   name: string;
   health: CollectorHealth;
+  /** Cuándo se enroló, para decir cuánto le falta de medición. */
+  measuringSince?: string;
   className?: string;
 }) {
+  // Un estado en ámbar sin explicación se lee como avería. El modo medición
+  // dura 24 h (§5) y termina solo: decir cuándo evita la llamada de soporte.
+  const measuringEndsIn =
+    health.status === "measuring" && measuringSince
+      ? Math.max(
+          0,
+          Math.ceil(
+            (Date.parse(measuringSince) + 24 * 3_600_000 - Date.now()) / 3_600_000,
+          ),
+        )
+      : undefined;
+
   return (
     <div className={cn("", className)}>
       <div className="flex items-center gap-2">
         <span className={cn("size-2 shrink-0 rounded-full", STATUS_DOT[health.status])} />
         <span className="text-small font-medium">{name}</span>
-        <span className="text-micro text-ink-soft">{COLLECTOR_STATUS_LABELS[health.status]}</span>
+        <span className="text-micro text-ink-soft">
+          {COLLECTOR_STATUS_LABELS[health.status]}
+          {measuringEndsIn !== undefined
+            ? ` · empieza a vigilar en ${measuringEndsIn} h`
+            : ""}
+        </span>
       </div>
 
       <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2">

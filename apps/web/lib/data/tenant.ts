@@ -118,7 +118,7 @@ export const listCollectors = cache(async (): Promise<Collector[]> => {
   const { data } = await supabase
     .from("collectors")
     .select(
-      "id, site_id, name, version, status, last_seen_at, vault_days, collector_heartbeats(ts, eps, dropped_pct, queue_depth, disk_free_gb, clock_skew_seconds, version)",
+      "id, site_id, name, version, status, last_seen_at, vault_days, created_at, collector_heartbeats(ts, eps, dropped_pct, queue_depth, disk_free_gb, clock_skew_seconds, version)",
     )
     .order("name");
 
@@ -133,6 +133,7 @@ export const listCollectors = cache(async (): Promise<Collector[]> => {
       id: row.id,
       siteId: row.site_id,
       name: row.name,
+      createdAt: row.created_at,
       health: {
         version: latest?.version ?? row.version ?? "—",
         lastSeenAt: row.last_seen_at ?? latest?.ts ?? "",

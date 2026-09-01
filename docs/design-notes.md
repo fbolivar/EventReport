@@ -1004,3 +1004,21 @@ Dos cambios:
 
 **Regla:** en un proceso que atiende a varios equipos, el fallo de uno se aísla. Un error de
 configuración de ayer no puede dejar ciego lo que hoy funciona.
+
+#### Un ámbar eterno: el modo medición no terminaba nunca
+
+El diseño (§5) dice que el colector mide 24 h desde el enrolamiento y después empieza a vigilar.
+Nadie lo implementó: el latido conservaba `measuring` para siempre, así que en el portal el
+colector se quedaba en ámbar de por vida. El primer cliente real lo leyó como "no veo nada
+activo", que es exactamente lo que parece.
+
+Dos cambios, en el sitio que corresponde a cada uno:
+
+- El **latido** pasa el colector a `active` cuando se cumplen las 24 h desde el enrolamiento. La
+  regla vive en el servidor, no en el colector: un cliente no debe poder acortarse el período de
+  medición.
+- La **pantalla** dice cuánto falta: "En medición · empieza a vigilar en 24 h". Un estado en
+  ámbar sin explicación se lee como avería y termina en una llamada de soporte.
+
+**Regla:** un estado transitorio tiene que decir cuándo termina. Si no se puede decir, no es un
+estado, es un problema.

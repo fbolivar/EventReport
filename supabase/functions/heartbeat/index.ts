@@ -51,16 +51,21 @@ Deno.serve(
       { onConflict: "collector_id,ts" },
     );
 
-    // Un colector que acaba de enrolarse sigue **en medición** hasta que ha
-    // visto suficiente tráfico; el latido no lo saca de ahí. Lo que sí hace es
-    // devolverlo a activo si estaba dado por caído.
+    // Modo medición: 24 h desde el enrolamiento (§5). Durante ese tiempo el
+    // colector cuenta para saber qué retención de bóveda cabe, y no se le pide
+    // que alerte de nada. Cumplidas las 24 h, el latido lo pasa a activo.
+    //
+    // Sin esto el colector se quedaba "en medición" para siempre: el diseño lo
+    // decía y nadie lo implementaba, así que el cliente veía un ámbar eterno.
     const { data: current } = await context.admin
       .from("collectors")
-      .select("status")
+      .select("status, created_at")
       .eq("id", context.collectorId)
       .maybeSingle();
 
-    const status = current?.status === "measuring" ? "measuring" : "active";
+    const measuringSince = current?.created_at ? Date.parse(current.created_at) : Date.now();
+    const stillMeasuring = Date.now() - measuringSince < 24 * 60 * 60 * 1000;
+    const status = current?.status === "measuring" && stillMeasuring ? "measuring" : "active";
 
     await context.admin
       .from("collectors")

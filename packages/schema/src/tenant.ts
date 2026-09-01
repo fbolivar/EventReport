@@ -51,6 +51,8 @@ export interface Collector {
   siteId: string;
   name: string;
   health: CollectorHealth;
+  /** Cuándo se enroló: el modo medición dura 24 h desde aquí (§5). */
+  createdAt?: Timestamp;
 }
 
 export interface Firewall {
