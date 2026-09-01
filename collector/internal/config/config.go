@@ -49,6 +49,10 @@ type Device struct {
 	SourceIP   string `json:"sourceIp"`
 	// TokenEncrypted is the API token, sealed with the machine passphrase.
 	TokenEncrypted string `json:"tokenEncrypted"`
+	// Insecure records that the operator accepted the device's self-signed
+	// certificate. Queda escrito en el archivo para que se pueda auditar
+	// después: es una decisión, no un detalle de la conexión.
+	Insecure bool `json:"insecure,omitempty"`
 }
 
 var ErrNotEnrolled = errors.New("el colector no está enrolado: ejecuta `collector enroll`")

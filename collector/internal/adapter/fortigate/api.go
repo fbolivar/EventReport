@@ -3,6 +3,7 @@ package fortigate
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -28,7 +29,17 @@ func (a *Adapter) client() HTTPClient {
 	if a.HTTP != nil {
 		return a.HTTP
 	}
-	return &http.Client{Timeout: 30 * time.Second}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if a.Insecure {
+		// Solo cuando el operador lo pidió: el certificado del equipo es
+		// autofirmado y no hay forma de validarlo. La conexión sigue cifrada;
+		// lo que se pierde es la garantía de con quién se está hablando, y por
+		// eso conviene que el colector y el firewall estén en la misma red.
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+
+	return &http.Client{Timeout: 30 * time.Second, Transport: transport}
 }
 
 func (a *Adapter) get(ctx context.Context, path string, out any) error {

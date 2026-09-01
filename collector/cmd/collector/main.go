@@ -42,6 +42,7 @@ const usage = `EventReport collector
 
 Uso:
   collector enroll -token <token> -url <url-supabase>   registra este colector
+  collector device add -brand <marca> -host <url> -token <token>  registra un firewall
   collector run                                          recibe, agrega y envía
   collector test                                         prueba la API del firewall
   collector vault -device <id> -from <fecha> -to <fecha> consulta la bóveda local
@@ -67,6 +68,8 @@ func main() {
 		err = runEnroll(args, logger)
 	case "run":
 		err = runCollector(args, logger)
+	case "device":
+		err = runDevice(args, logger)
 	case "test":
 		err = runTest(args, logger)
 	case "vault":
@@ -210,6 +213,145 @@ func postEnrolment(baseURL string, payload map[string]any) (enrolmentAnswer, err
 	return answer, nil
 }
 
+// runDevice registers the firewall this collector will watch.
+//
+// Es el segundo paso del onboarding, después de `enroll`: el técnico pega el
+// host y el token de la API del equipo, el colector habla con él, sube al SaaS
+// **lo que el equipo dice de sí mismo** —marca, modelo, serie, versión— y
+// guarda el token cifrado en disco. El token no viaja: si viajara, un robo de
+// nuestra base daría acceso a los firewalls de todos los clientes.
+func runDevice(args []string, logger *slog.Logger) error {
+	if len(args) == 0 || args[0] != "add" {
+		return fmt.Errorf("uso: collector device add -brand <marca> -host <url> -token <token>")
+	}
+
+	set := flag.NewFlagSet("device add", flag.ExitOnError)
+	path := configFlag(set)
+	brand := set.String("brand", "fortigate", "marca del firewall")
+	host := set.String("host", "", "URL de la API, por ejemplo https://192.168.1.99")
+	token := set.String("token", os.Getenv("EVENTREPORT_DEVICE_TOKEN"), "token de la API del equipo")
+	sourceIP := set.String("source-ip", "", "IP desde la que el equipo envía syslog (por defecto, la del host)")
+	insecure := set.Bool("insecure", false, "aceptar el certificado autofirmado del equipo")
+	passphrase := set.String("passphrase", os.Getenv("EVENTREPORT_PASSPHRASE"), "frase de paso para cifrar el token")
+	if err := set.Parse(args[1:]); err != nil {
+		return err
+	}
+
+	if *host == "" || *token == "" {
+		return fmt.Errorf("faltan -host y -token")
+	}
+	if *passphrase == "" {
+		return fmt.Errorf("falta -passphrase (o EVENTREPORT_PASSPHRASE): es lo que cifra el token en disco")
+	}
+
+	file, err := config.Load(*path)
+	if err != nil {
+		return err
+	}
+
+	device := config.Device{Brand: *brand, Host: *host, SourceIP: *sourceIP}
+	built, err := buildAdapterWith(device, *token, *insecure)
+	if err != nil {
+		return err
+	}
+
+	if *insecure {
+		logger.Warn("no se verificará el certificado del equipo",
+			"host", *host,
+			"motivo", "-insecure: la conexión sigue cifrada, pero no se comprueba con quién se habla")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	// Se habla con el equipo **antes** de guardar nada: un token equivocado se
+	// descubre aquí, con el técnico delante, y no tres días después cuando el
+	// primer informe salga vacío.
+	logger.Info("consultando el equipo", "host", *host, "marca", *brand)
+	snapshot, err := built.FetchConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("no se pudo leer la configuración del equipo: %w", err)
+	}
+
+	key, err := file.SigningKey()
+	if err != nil {
+		return err
+	}
+
+	client := transport.New(file.BaseURL, file.CollectorID, key)
+	response, err := client.Post(ctx, "register-device", map[string]any{
+		"brand":        snapshot.Device.Brand,
+		"hostname":     snapshot.Device.Hostname,
+		"model":        snapshot.Device.Model,
+		"serial":       snapshot.Device.Serial,
+		"firmware":     snapshot.Device.Firmware,
+		"capabilities": snapshot.Capabilities,
+	})
+	if err != nil {
+		return err
+	}
+	if response.Status != http.StatusOK {
+		return fmt.Errorf("register-device respondió %d: %s", response.Status, response.Body)
+	}
+
+	var answer struct {
+		FirewallID string `json:"firewallId"`
+		IsNew      bool   `json:"isNew"`
+	}
+	if err := json.Unmarshal(response.Body, &answer); err != nil {
+		return err
+	}
+
+	sealed, err := config.Encrypt(*token, *passphrase)
+	if err != nil {
+		return err
+	}
+
+	device.FirewallID = answer.FirewallID
+	device.TokenEncrypted = sealed
+	device.Insecure = *insecure
+	if device.SourceIP == "" {
+		device.SourceIP = hostOnly(*host)
+	}
+
+	// Un equipo se reemplaza por su id, no se duplica: repetir el comando con
+	// otro token es la forma de rotar la credencial.
+	replaced := false
+	for index, existing := range file.Devices {
+		if existing.FirewallID == device.FirewallID {
+			file.Devices[index] = device
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		file.Devices = append(file.Devices, device)
+	}
+
+	if err := config.Save(*path, file); err != nil {
+		return err
+	}
+
+	logger.Info("equipo registrado",
+		"firewall", answer.FirewallID,
+		"hostname", snapshot.Device.Hostname,
+		"modelo", snapshot.Device.Model,
+		"firmware", snapshot.Device.Firmware,
+		"nuevo", answer.IsNew)
+	fmt.Printf("apunta el syslog del equipo a este colector (%s) y ejecuta `collector run`\n", file.SyslogAddr)
+	return nil
+}
+
+// hostOnly extracts the address from a URL so syslog lines can be matched to a
+// device without asking the operator to type the IP twice.
+func hostOnly(raw string) string {
+	trimmed := strings.TrimPrefix(strings.TrimPrefix(raw, "https://"), "http://")
+	if index := strings.IndexAny(trimmed, ":/"); index > 0 {
+		return trimmed[:index]
+	}
+	return trimmed
+}
+
 func buildAdapter(device config.Device, passphrase string) (adapter.Adapter, error) {
 	token := ""
 	if device.TokenEncrypted != "" && passphrase != "" {
@@ -220,9 +362,15 @@ func buildAdapter(device config.Device, passphrase string) (adapter.Adapter, err
 		token = opened
 	}
 
+	return buildAdapterWith(device, token, device.Insecure)
+}
+
+// buildAdapterWith is the half that does not need the vault:  has
+// the token in hand and nothing encrypted yet.
+func buildAdapterWith(device config.Device, token string, insecure bool) (adapter.Adapter, error) {
 	switch device.Brand {
 	case "fortigate":
-		return &fortigate.Adapter{Host: device.Host, Token: token}, nil
+		return &fortigate.Adapter{Host: device.Host, Token: token, Insecure: insecure}, nil
 	default:
 		return nil, fmt.Errorf("marca sin adaptador todavía: %s", device.Brand)
 	}

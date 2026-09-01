@@ -14,6 +14,11 @@ type Adapter struct {
 	// Host and Token are used by the API side; parsing needs neither.
 	Host  string
 	Token string
+	// Insecure skips TLS verification. A FortiGate out of the box answers with
+	// a self-signed certificate, so this is on for many real installations —
+	// but it is opt-in and never the default: the operator has to say it, and
+	// the collector says it back in the log every time it connects.
+	Insecure bool
 	// HTTP is injected in tests so the adapter can be exercised without a
 	// firewall on the other end.
 	HTTP HTTPClient

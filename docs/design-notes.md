@@ -779,3 +779,62 @@ En el mismo arreglo apareció otro defecto: el `next` del inicio de sesión se v
 sesión y terminaba en `/acme/dashboard`. Ahora se valida contra todas las empresas de las que es
 miembro —la lista sale de RLS—, así que un `next` inventado sigue sin llevar a nadie donde no
 tiene acceso.
+
+## Bloque 16 — Registrar el firewall, y el correo
+
+### El equipo que el colector vigila
+
+`collector enroll` daba identidad al colector, pero el archivo quedaba con `devices: null`: no
+sabía a qué firewall mirar. `collector device add` cierra ese hueco y es el segundo comando que
+ejecuta el técnico.
+
+El orden importa: **primero habla con el equipo, después guarda**. Un token equivocado se descubre
+con el técnico delante, no tres días más tarde cuando el primer informe salga vacío. Después sube
+a `register-device` lo que el firewall dice de sí mismo —marca, modelo, serie, versión— y **cifra
+el token en disco**. El token no viaja: si viajara, un robo de nuestra base daría acceso a los
+firewalls de todos los clientes. Hay una comprobación de que el archivo no lo contiene en claro.
+
+`register-device` resuelve el tenant y la sede desde el colector firmante, nunca desde el cuerpo,
+y usa la **serie** como identidad del equipo: reinstalar el colector actualiza el firewall, no lo
+duplica ni consume cupo del plan.
+
+**TLS.** Un FortiGate de fábrica presenta un certificado autofirmado, así que verificar falla.
+`-insecure` existe, está apagado por defecto y el colector lo advierte en el registro cada vez que
+conecta; queda escrito en el archivo de configuración para que se pueda auditar después. Aceptar
+un certificado que no se puede validar es una decisión, no un detalle de conexión.
+
+Probado de punta a punta contra un FortiGate simulado con TLS autofirmado (`scripts/fakegate`, en
+el scratchpad): sin `-insecure` falla con `certificate signed by unknown authority`; con token
+equivocado, `401`; con todo correcto registra el equipo, `collector test` responde
+`conexión correcta` y el firewall aparece en el portal con su modelo y firmware.
+
+La guía para hacerlo contra un equipo real —perfil de solo lectura, usuario de API, *trusted
+hosts*, syslog y los errores frecuentes— está en `docs/conectar-un-firewall.md`.
+
+### Correo
+
+`docs/entrega-por-correo.md` tiene el paso a paso de Google Workspace: cuenta dedicada
+`informes@`, alias, verificación en dos pasos, contraseña de aplicación, y **SPF, DKIM y DMARC**,
+que es la parte que se salta todo el mundo y la razón por la que los informes acaban en spam.
+
+El código (`lib/email/send.ts`) sale por SMTP y está detrás de una interfaz: cambiar a un proveedor
+transaccional es cambiar el transporte. Tres decisiones que quedan en el código, no en el correo:
+
+- **Sin credenciales no falla**, informa que no envió. Un informe generado y guardado vale aunque
+  el aviso no salga; al revés, no.
+- **El correo no lleva hallazgos.** Un hallazgo dice dónde está el hueco del firewall del cliente;
+  el correo no es un canal para eso.
+- **El enlace no lleva token**: apunta al portal, que pide sesión. Reenviar el correo no regala
+  acceso.
+
+El aviso sale solo desde la generación programada. Quien acaba de pulsar "Generar" no necesita un
+correo diciéndole que lo pidió.
+
+`scripts/probe-email.ts` prueba el envío sin generar nada; hoy responde "faltan SMTP_HOST,
+SMTP_USER o SMTP_PASSWORD", que es exactamente lo que debe decir hasta que la cuenta exista.
+
+#### Nota: `gofmt -l` en Windows
+
+El repositorio se saca con CRLF, y `gofmt` espera LF: `gofmt -l` marca archivos que no tienen nada
+mal. Antes de "arreglar" formato, mirar `gofmt -d`: si el diff son líneas completas sin cambios
+visibles, es el fin de línea y hay que dejarlo.
