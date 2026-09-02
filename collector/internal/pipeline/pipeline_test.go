@@ -3,6 +3,7 @@ package pipeline
 import (
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"github.com/fbolivar/eventreport/collector/internal/normalize"
 	"io"
 	"log/slog"
@@ -206,5 +207,52 @@ func TestOpenHoursAreSentWithoutClosingThem(t *testing.T) {
 	closed := aggregator.CloseBefore(time.Now().UTC().Add(2 * time.Hour))
 	if len(closed) != 1 {
 		t.Fatalf("horas cerradas = %d", len(closed))
+	}
+}
+
+// Lo que de verdad viaja al portal.
+//
+// El colector puede agregar la actividad por identidad perfectamente y no
+// enviarla: pasó, y la nube respondía 200 con cero filas guardadas porque el
+// campo no llegaba en el cuerpo. Este test mira el JSON encolado, no la
+// estructura en memoria.
+func TestElEnvioLlevaLaActividadPorIdentidad(t *testing.T) {
+	pipeline, _, _ := newPipeline(t)
+
+	pipeline.handle(syslog.Line{
+		Received: time.Date(2026, 9, 1, 10, 20, 0, 0, time.UTC),
+		Source:   net.ParseIP("10.10.0.1"),
+		Data:     []byte(line),
+	})
+
+	if _, err := pipeline.SendOpenHours(); err != nil {
+		t.Fatal(err)
+	}
+
+	pending, err := pipeline.Buffer.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("esperaba un envío encolado, hay %d", len(pending))
+	}
+
+	var payload struct {
+		Hours []struct {
+			Identities []struct {
+				Kind  string `json:"kind"`
+				Key   string `json:"key"`
+				Label string `json:"label"`
+			} `json:"identities"`
+		} `json:"hours"`
+	}
+	if err := json.Unmarshal(pending[0].Payload, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Hours) != 1 {
+		t.Fatalf("horas en el cuerpo = %d", len(payload.Hours))
+	}
+	if len(payload.Hours[0].Identities) == 0 {
+		t.Fatalf("el cuerpo viajó sin identidades: %s", pending[0].Payload)
 	}
 }

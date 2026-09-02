@@ -55,6 +55,8 @@ type Hour struct {
 	Hour     time.Time  `json:"hour"`
 	Counters []Counter  `json:"counters"`
 	TopN     []TopEntry `json:"topn"`
+	// Identities es la actividad atribuida a cada persona, equipo o dirección.
+	Identities []Identity `json:"identities"`
 	// Events the parser did not recognise. Reported as data quality, never
 	// silently dropped (section 6.2).
 	Unparsed int64 `json:"unparsed"`
@@ -73,9 +75,10 @@ type topKey struct {
 }
 
 type bucket struct {
-	counters map[counterKey]*Counter
-	top      map[topKey]*TopEntry
-	unparsed int64
+	counters   map[counterKey]*Counter
+	top        map[topKey]*TopEntry
+	identities map[string]*identityBucket
+	unparsed   int64
 	// maxSkew is the largest gap seen between the device's own timestamp and
 	// the moment the line arrived. Past 60 s it opens FW-015.
 	maxSkew time.Duration
@@ -102,8 +105,9 @@ func (a *Aggregator) bucketFor(deviceID string, hour time.Time) *bucket {
 	current, ok := hours[hour]
 	if !ok {
 		current = &bucket{
-			counters: make(map[counterKey]*Counter),
-			top:      make(map[topKey]*TopEntry),
+			counters:   make(map[counterKey]*Counter),
+			top:        make(map[topKey]*TopEntry),
+			identities: make(map[string]*identityBucket),
 		}
 		hours[hour] = current
 	}
@@ -177,6 +181,10 @@ func (a *Aggregator) Add(event *normalize.Event, received time.Time) {
 	if event.Type == normalize.EventVPN {
 		add(DimVPNUser, event.User)
 	}
+
+	// Y a quién se le atribuye, que es lo que convierte un contador en algo
+	// sobre lo que alguien puede actuar.
+	current.identity(event)
 }
 
 // AddUnparsed counts a line the adapter did not recognise.
@@ -211,6 +219,7 @@ func (a *Aggregator) Open() []Hour {
 				Hour:             hour,
 				Counters:         sortedCounters(current),
 				TopN:             cappedTop(current),
+				Identities:       identitiesOf(current),
 				Unparsed:         current.unparsed,
 				ClockSkewSeconds: int(current.maxSkew.Seconds()),
 			})
@@ -238,6 +247,7 @@ func (a *Aggregator) CloseBefore(cutoff time.Time) []Hour {
 				Hour:             hour,
 				Counters:         sortedCounters(current),
 				TopN:             cappedTop(current),
+				Identities:       identitiesOf(current),
 				Unparsed:         current.unparsed,
 				ClockSkewSeconds: int(current.maxSkew.Seconds()),
 			})

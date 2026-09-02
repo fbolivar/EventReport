@@ -257,6 +257,9 @@ func (a *Adapter) ParseLog(line []byte) (*normalize.Event, bool) {
 		Proto:      fields["proto"],
 		PolicyID:   fields["policyid"],
 		User:       fields["user"],
+		SrcName:    fields["srcname"],
+		SrcMAC:     fields["srcmac"],
+		OSName:     fields["osname"],
 		App:        fields["app"],
 		Category:   fields["catdesc"],
 		ThreatName: fields["attack"],
@@ -272,8 +275,10 @@ func (a *Adapter) ParseLog(line []byte) (*normalize.Event, bool) {
 	if event.Category == "" {
 		event.Category = fields["cat"]
 	}
+	// `srcname` ya no se copia a `User`: era hacer pasar el nombre de un equipo
+	// por una persona autenticada, y en un informe eso es una afirmación falsa.
 	if event.User == "" {
-		event.User = fields["srcname"]
+		event.User = fields["unauthuser"]
 	}
 
 	return event, true

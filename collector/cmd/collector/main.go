@@ -900,8 +900,14 @@ func collect(ctx context.Context, path, passphrase string, logger *slog.Logger) 
 	// terminado— y el snapshot se quedó en el disco. En el portal, un colector
 	// vivo y cero de todo lo demás. Lo que el cliente compara no es nuestro
 	// intervalo de subida: es que al terminar de instalar, su firewall esté ahí.
-	sendPending(ctx, client, pending, worker, listener, file.VaultDir, logger)
-	logger.Info("configuración inicial enviada; tu firewall ya aparece en el portal")
+	// El mensaje depende de que quede vacío el búfer: decir "enviada" cuando la
+	// nube devolvió un error es la clase de línea que hace perder una tarde
+	// buscando en el sitio equivocado.
+	if sendPending(ctx, client, pending, worker, listener, file.VaultDir, logger) == 0 {
+		logger.Info("configuración inicial enviada; tu firewall ya aparece en el portal")
+	} else {
+		logger.Warn("la configuración inicial no se aceptó; mira el error de arriba")
+	}
 
 	for {
 		select {
@@ -942,7 +948,7 @@ func collect(ctx context.Context, path, passphrase string, logger *slog.Logger) 
 			if _, err := worker.SendOpenHours(); err != nil {
 				logger.Error("no se pudo adelantar la hora en curso", "error", err)
 			}
-			sendPending(ctx, client, pending, worker, listener, file.VaultDir, logger)
+			_ = sendPending(ctx, client, pending, worker, listener, file.VaultDir, logger)
 			if _, err := store.Rotate(time.Now()); err != nil {
 				logger.Error("no se pudo rotar la bóveda", "error", err)
 			}
@@ -953,7 +959,9 @@ func collect(ctx context.Context, path, passphrase string, logger *slog.Logger) 
 	}
 }
 
-// sendPending uploads queued payloads in order and reports health.
+// sendPending sube lo encolado en orden y devuelve cuántos envíos rechazó la
+// nube. Devolverlo, y no solo registrarlo, es lo que permite que quien llama
+// diga la verdad sobre lo que pasó en vez de suponer que salió bien.
 func sendPending(
 	ctx context.Context,
 	client *transport.Client,
@@ -962,7 +970,7 @@ func sendPending(
 	listener *syslog.Listener,
 	vaultDir string,
 	logger *slog.Logger,
-) {
+) int {
 	stats := listener.Stats()
 	unparsed, skew := worker.Quality()
 
@@ -989,13 +997,15 @@ func sendPending(
 	items, err := pending.List()
 	if err != nil {
 		logger.Error("no se pudo leer el buffer", "error", err)
-		return
+		return 0
 	}
 
+	rechazados := 0
 	for _, item := range items {
 		var payload any
 		if err := json.Unmarshal(item.Payload, &payload); err != nil {
 			logger.Error("payload ilegible, se descarta", "archivo", item.Path)
+			rechazados++
 			_ = pending.Ack(item.Path)
 			continue
 		}
@@ -1005,17 +1015,27 @@ func sendPending(
 		if err != nil {
 			// No connection: stop here and keep the order for the next round.
 			logger.Warn("envío pendiente", "función", function, "error", err)
-			return
+			return rechazados
 		}
 		if response.Status >= 400 {
 			logger.Error("la nube rechazó el envío", "función", function, "estado", response.Status, "respuesta", string(response.Body))
 			// A rejected payload will not become valid by retrying it forever.
+			rechazados++
 			_ = pending.Ack(item.Path)
 			continue
 		}
 
+		// Qué aceptó la nube, no solo que respondió bien.
+		//
+		// Un 200 con cero filas guardadas es indistinguible de un envío correcto
+		// desde este lado, y esa ceguera costó una tarde: el colector agregaba
+		// la actividad por identidad, la enviaba, y en el portal no aparecía.
+		logger.Info("envío aceptado", "tipo", item.Kind, "respuesta", string(response.Body))
+
 		_ = pending.Ack(item.Path)
 	}
+
+	return rechazados
 }
 
 // enqueueSnapshot reads the firewall configuration and queues it for upload.

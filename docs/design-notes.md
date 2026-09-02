@@ -1277,3 +1277,42 @@ se puede escribir en un informe de cumplimiento. Cuando el equipo da pistas de l
 Hoy no causan un hallazgo falso porque nadie los evalúa, pero el equipo real tiene
 `ntpsync: enable · type: fortiguard`, así que el dato existe y el día que se escriba una regla de
 sincronización horaria hay que pedirlo antes, no después.
+
+
+#### "Por usuario" no existe en una PYME
+
+Medido sobre 429 líneas del FortiGate de un cliente real: `user` aparece en 47 —once por ciento—,
+`srcname` en 67, `srcmac` en 311 y `srcip` en 426. Una pantalla que agrupe solo por usuario
+autenticado sale **vacía** en la empresa promedio, que es justo el cliente al que se le vende.
+
+La atribución baja entonces por una escalera y guarda en qué escalón se quedó:
+
+    usuario    sesión iniciada contra el directorio o el portal cautivo
+    equipo     nombre anunciado por DHCP
+    huella     sistema operativo y MAC
+    dirección  la IP, que siempre está
+
+Contra el tráfico real, el reparto fue 199 direcciones, 14 huellas, 11 equipos y **3 usuarios**:
+sin escalera, la pantalla habría tenido tres filas. Con ella muestra `GVM-CONTABILIDAD`,
+`GVMBOGBOD01` y `viviana.galeano`, cada uno con sus aplicaciones y sus denegadas.
+
+El portal enseña el escalón junto al nombre. Un informe que llama "usuario" a una dirección IP es
+una afirmación que no se sostiene delante de un auditor, y el parser hacía justo eso: copiaba
+`srcname` —el nombre de un equipo— dentro de `user`. Ya no.
+
+**Regla:** cuando un dato ideal falta en el noventa por ciento de los casos, el diseño no es
+exigirlo: es degradar con honestidad y decir qué se está mirando en su lugar.
+
+#### Un 200 con cero filas guardadas
+
+El colector agregaba la actividad por identidad, la enviaba, la nube respondía **200**, y en el
+portal no aparecía nada. Desde el colector, un envío aceptado que no guarda nada es idéntico a uno
+correcto. Ahora cada envío registra lo que la nube dijo que aceptó:
+
+    envío aceptado  tipo=rollups  respuesta={"counters":9,"topn":229,"identities":135}
+
+Y `sendPending` devuelve cuántos rechazó, en vez de que quien llama lo suponga: el mensaje
+"configuración inicial enviada" se imprimía incluso cuando la nube había devuelto 429.
+
+**Regla:** registrar que una llamada respondió bien no es registrar que hizo algo. Cuando el efecto
+está del otro lado de la red, lo que se anota es el efecto.

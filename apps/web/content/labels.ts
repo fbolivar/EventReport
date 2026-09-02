@@ -132,3 +132,14 @@ export const COLLECTOR_STATUS_LABELS = {
   stale: "Sin datos recientes",
   offline: "Sin conexión",
 } as const;
+
+/**
+ * Cómo se atribuyó una sesión. El orden es el de la escalera del colector: de
+ * la certeza mayor a la menor.
+ */
+export const IDENTITY_KIND_LABELS = {
+  user: "Usuario con sesión iniciada",
+  host: "Equipo, por su nombre en la red",
+  fingerprint: "Equipo, por su huella",
+  address: "Dirección de red",
+} as const;

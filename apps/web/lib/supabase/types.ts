@@ -85,6 +85,13 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "collector_enrolments_collector_id_fkey"
+            columns: ["collector_id"]
+            isOneToOne: false
+            referencedRelation: "collectors"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "collector_enrolments_site_id_fkey"
             columns: ["site_id"]
             isOneToOne: false
@@ -908,6 +915,111 @@ export type Database = {
           },
         ]
       }
+      rollups_identity_hourly: {
+        Row: {
+          allowed: number
+          bytes_in: number
+          bytes_out: number
+          denied: number
+          firewall_id: string
+          hour: string
+          identity_key: string
+          kind: Database["public"]["Enums"]["identity_kind"]
+          label: string
+          sessions: number
+          tenant_id: string
+        }
+        Insert: {
+          allowed?: number
+          bytes_in?: number
+          bytes_out?: number
+          denied?: number
+          firewall_id: string
+          hour: string
+          identity_key: string
+          kind: Database["public"]["Enums"]["identity_kind"]
+          label: string
+          sessions?: number
+          tenant_id: string
+        }
+        Update: {
+          allowed?: number
+          bytes_in?: number
+          bytes_out?: number
+          denied?: number
+          firewall_id?: string
+          hour?: string
+          identity_key?: string
+          kind?: Database["public"]["Enums"]["identity_kind"]
+          label?: string
+          sessions?: number
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rollups_identity_hourly_firewall_id_fkey"
+            columns: ["firewall_id"]
+            isOneToOne: false
+            referencedRelation: "firewalls"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rollups_identity_hourly_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      rollups_identity_topn: {
+        Row: {
+          bytes: number
+          count: number
+          dimension: Database["public"]["Enums"]["topn_dimension"]
+          firewall_id: string
+          hour: string
+          identity_key: string
+          key: string
+          tenant_id: string
+        }
+        Insert: {
+          bytes?: number
+          count?: number
+          dimension: Database["public"]["Enums"]["topn_dimension"]
+          firewall_id: string
+          hour: string
+          identity_key: string
+          key: string
+          tenant_id: string
+        }
+        Update: {
+          bytes?: number
+          count?: number
+          dimension?: Database["public"]["Enums"]["topn_dimension"]
+          firewall_id?: string
+          hour?: string
+          identity_key?: string
+          key?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rollups_identity_topn_firewall_id_fkey"
+            columns: ["firewall_id"]
+            isOneToOne: false
+            referencedRelation: "firewalls"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rollups_identity_topn_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rollups_topn: {
         Row: {
           bytes: number
@@ -1246,30 +1358,43 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      is_tenant_admin: { Args: { p_tenant_id: string }; Returns: boolean }
-      is_tenant_member: { Args: { p_tenant_id: string }; Returns: boolean }
       create_tenant: {
         Args: {
+          p_city?: string
           p_name: string
-          p_slug: string
           p_plan?: Database["public"]["Enums"]["plan_code"]
           p_site?: string
-          p_city?: string
+          p_slug: string
         }
         Returns: string
       }
-      tenant_member_profiles: {
-        Args: { p_tenant_id?: string }
-        Returns: {
-          id: string
-          tenant_id: string
-          user_id: string
-          role: Database["public"]["Enums"]["member_role"]
-          email: string | null
-          full_name: string | null
-          last_seen_at: string | null
-        }[]
-      }
+      is_tenant_admin: { Args: { p_tenant_id: string }; Returns: boolean }
+      is_tenant_member: { Args: { p_tenant_id: string }; Returns: boolean }
+      tenant_member_profiles:
+        | {
+            Args: never
+            Returns: {
+              email: string
+              full_name: string
+              id: string
+              last_seen_at: string
+              role: Database["public"]["Enums"]["member_role"]
+              tenant_id: string
+              user_id: string
+            }[]
+          }
+        | {
+            Args: { p_tenant_id?: string }
+            Returns: {
+              email: string
+              full_name: string
+              id: string
+              last_seen_at: string
+              role: Database["public"]["Enums"]["member_role"]
+              tenant_id: string
+              user_id: string
+            }[]
+          }
     }
     Enums: {
       brand:
@@ -1304,6 +1429,7 @@ export type Database = {
       framework_code: "iso27001" | "cis_v8" | "pci_dss" | "hipaa"
       ha_role: "standalone" | "primary" | "secondary"
       ha_state: "healthy" | "degraded" | "failed"
+      identity_kind: "user" | "host" | "fingerprint" | "address"
       member_role: "mssp_admin" | "client_admin" | "client_viewer"
       plan_code: "basic" | "standard" | "premium"
       report_status: "generating" | "ready" | "failed"
@@ -1496,6 +1622,7 @@ export const Constants = {
       framework_code: ["iso27001", "cis_v8", "pci_dss", "hipaa"],
       ha_role: ["standalone", "primary", "secondary"],
       ha_state: ["healthy", "degraded", "failed"],
+      identity_kind: ["user", "host", "fingerprint", "address"],
       member_role: ["mssp_admin", "client_admin", "client_viewer"],
       plan_code: ["basic", "standard", "premium"],
       report_status: ["generating", "ready", "failed"],

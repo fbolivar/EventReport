@@ -255,9 +255,10 @@ func (p *Pipeline) CloseHours(now time.Time) (int, error) {
 		payload := RollupsPayload{
 			FirewallID: hour.DeviceID,
 			Hours: []RollupHour{{
-				Hour:     hour.Hour.UTC().Format(time.RFC3339),
-				Counters: hour.Counters,
-				TopN:     hour.TopN,
+				Hour:       hour.Hour.UTC().Format(time.RFC3339),
+				Counters:   hour.Counters,
+				TopN:       hour.TopN,
+				Identities: hour.Identities,
 			}},
 		}
 		if err := p.Buffer.Enqueue("rollups", payload); err != nil {
@@ -285,9 +286,10 @@ func (p *Pipeline) SendOpenHours() (int, error) {
 		payload := RollupsPayload{
 			FirewallID: hour.DeviceID,
 			Hours: []RollupHour{{
-				Hour:     hour.Hour.UTC().Format(time.RFC3339),
-				Counters: hour.Counters,
-				TopN:     hour.TopN,
+				Hour:       hour.Hour.UTC().Format(time.RFC3339),
+				Counters:   hour.Counters,
+				TopN:       hour.TopN,
+				Identities: hour.Identities,
 			}},
 		}
 		if err := p.Buffer.Enqueue("rollups", payload); err != nil {
@@ -308,6 +310,9 @@ type RollupHour struct {
 	Hour     string               `json:"hour"`
 	Counters []aggregate.Counter  `json:"counters"`
 	TopN     []aggregate.TopEntry `json:"topn"`
+	// Identities viaja aparte de TopN porque cada una lleva su propio detalle:
+	// aplanarlas en una sola lista perdería a quién pertenece cada fila.
+	Identities []aggregate.Identity `json:"identities"`
 }
 
 // EventsPayload is the wire shape of `POST /ingest/events`.
