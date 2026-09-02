@@ -100,6 +100,8 @@ export const FRAMEWORK_LABELS: Record<FrameworkCode, string> = {
   cis_v8: "CIS Controls v8",
   pci_dss: "PCI DSS v4.0.1",
   hipaa: "HIPAA Security Rule",
+  nist_800_53: "NIST SP 800-53 Rev. 5",
+  cmmc_l2: "CMMC 2.0 nivel 2",
 };
 
 export const FRAMEWORK_SHORT_LABELS: Record<FrameworkCode, string> = {
@@ -107,6 +109,8 @@ export const FRAMEWORK_SHORT_LABELS: Record<FrameworkCode, string> = {
   cis_v8: "CIS v8",
   pci_dss: "PCI DSS",
   hipaa: "HIPAA",
+  nist_800_53: "NIST 800-53",
+  cmmc_l2: "CMMC 2.0",
 };
 
 export const MEMBER_ROLE_LABELS: Record<MemberRole, string> = {

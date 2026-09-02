@@ -1426,7 +1426,13 @@ export type Database = {
         | "admin"
         | "system"
       finding_status: "open" | "resolved" | "accepted"
-      framework_code: "iso27001" | "cis_v8" | "pci_dss" | "hipaa"
+      framework_code:
+        | "iso27001"
+        | "cis_v8"
+        | "pci_dss"
+        | "hipaa"
+        | "nist_800_53"
+        | "cmmc_l2"
       ha_role: "standalone" | "primary" | "secondary"
       ha_state: "healthy" | "degraded" | "failed"
       identity_kind: "user" | "host" | "fingerprint" | "address"
@@ -1619,7 +1625,14 @@ export const Constants = {
         "system",
       ],
       finding_status: ["open", "resolved", "accepted"],
-      framework_code: ["iso27001", "cis_v8", "pci_dss", "hipaa"],
+      framework_code: [
+        "iso27001",
+        "cis_v8",
+        "pci_dss",
+        "hipaa",
+        "nist_800_53",
+        "cmmc_l2",
+      ],
       ha_role: ["standalone", "primary", "secondary"],
       ha_state: ["healthy", "degraded", "failed"],
       identity_kind: ["user", "host", "fingerprint", "address"],

@@ -1316,3 +1316,20 @@ Y `sendPending` devuelve cuántos rechazó, en vez de que quien llama lo suponga
 
 **Regla:** registrar que una llamada respondió bien no es registrar que hizo algo. Cuando el efecto
 está del otro lado de la red, lo que se anota es el efecto.
+
+
+#### NIST 800-53 y CMMC: los mismos datos, más marcos
+
+La evidencia técnica ya se recogía; lo que faltaba era el mapeo. Se añadieron 29 controles de NIST
+SP 800-53 Rev. 5 y 23 prácticas de CMMC 2.0 nivel 2, con sus 88 filas de `rule_controls`, mapeadas
+regla por regla contra **lo que cada una mide de verdad** —leyendo su título, no adivinando por el
+código—. Contra el firewall real: 23 controles NIST cumplen y 6 no.
+
+**STIG no entra, y es a propósito.** Sus identificadores V-ID son específicos de cada dispositivo y
+de cada versión del benchmark, y se publican en los XCCDF de DISA. Escribirlos de memoria sería
+inventar referencias que un auditor comprueba en un catálogo público, y la primera que no exista
+tumba la credibilidad del informe entero. El camino es importar el XCCDF oficial del SRG de
+firewall; hasta entonces, el marco no se ofrece.
+
+**Regla:** en un producto de cumplimiento, una referencia inventada cuesta más que una funcionalidad
+que falta. Lo que no se puede citar con la fuente delante, no se publica.
