@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -241,6 +242,15 @@ func (a *Adapter) FetchConfig(ctx context.Context) (*normalize.Config, error) {
 		return nil, err
 	}
 
+	// A dónde envía sus registros este firewall.
+	//
+	// Sin esto el producto no podía distinguir "el firewall no tiene syslog
+	// configurado" de "los paquetes no llegan al colector", que son dos
+	// problemas con soluciones opuestas. Además es un control de cumplimiento
+	// por derecho propio: un firewall que no registra nada no cumple ISO 27001
+	// A.8.15 ni PCI DSS 10.
+	syslogTargets := a.fetchSyslogTargets(ctx)
+
 	// Las listas arrancan vacías, no nil: en Go una lista nil se serializa como
 	// `null` y el otro lado espera un arreglo. Un firewall sin túneles VPN debe
 	// enviar `[]`, no `null`.
@@ -259,7 +269,7 @@ func (a *Adapter) FetchConfig(ctx context.Context) (*normalize.Config, error) {
 		Services: normalize.Services{
 			NTP:           []string{},
 			DNS:           []string{},
-			SyslogTargets: []string{},
+			SyslogTargets: syslogTargets,
 		},
 		Device: normalize.Device{
 			Brand:         a.Brand(),
@@ -395,4 +405,59 @@ func firstField(value string) string {
 		return ""
 	}
 	return fields[0]
+}
+
+// syslogdSetting es lo que devuelve `cmdb/log.syslogd/setting`.
+type syslogdSetting struct {
+	Results struct {
+		Status string `json:"status"`
+		Server string `json:"server"`
+		Port   any    `json:"port"`
+	} `json:"results"`
+}
+
+// fetchSyslogTargets lee los hasta cuatro destinos de syslog del FortiGate.
+//
+// Devuelve una lista vacía y no un error si no se pueden leer: un firewall sin
+// syslog configurado es un hallazgo, no un fallo de recolección, y perder el
+// snapshot entero por esto sería peor que no saberlo.
+func (a *Adapter) fetchSyslogTargets(ctx context.Context) []string {
+	targets := []string{}
+
+	// FortiOS numera el segundo y siguientes: log.syslogd2, log.syslogd3...
+	for _, path := range []string{
+		"cmdb/log.syslogd/setting",
+		"cmdb/log.syslogd2/setting",
+		"cmdb/log.syslogd3/setting",
+		"cmdb/log.syslogd4/setting",
+	} {
+		var setting syslogdSetting
+		if err := a.get(ctx, path, &setting); err != nil {
+			continue
+		}
+		if !strings.EqualFold(setting.Results.Status, "enable") || setting.Results.Server == "" {
+			continue
+		}
+
+		target := setting.Results.Server
+		if port := puerto(setting.Results.Port); port != "" && port != "514" {
+			target += ":" + port
+		}
+		targets = append(targets, target)
+	}
+
+	return targets
+}
+
+// puerto normaliza el campo, que FortiOS devuelve unas veces como número y
+// otras como texto.
+func puerto(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case float64:
+		return strconv.Itoa(int(v))
+	default:
+		return ""
+	}
 }

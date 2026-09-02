@@ -1221,3 +1221,33 @@ Tres cambios:
 
 **Regla:** un dato que el cliente ya generó no puede quedarse esperando un temporizador nuestro.
 El primer dato de todos, menos todavía: es el único que decide si el producto sirve o no.
+
+
+#### La mitad del producto que nunca había recibido un dato
+
+Hasta esta sesión, `rollups_hourly`, `rollups_topn` y `critical_events` tenían **cero filas en toda
+la base**, desde el primer día. La actividad, los eventos y todo lo que nace del syslog jamás se
+habían probado con tráfico real. Se comprobó midiendo, no opinando: 436 paquetes en 90 segundos
+desde un FortiGate 40F real, el parser entendiendo sus líneas de FortiOS 7.4.12, y a los cinco
+minutos 7 filas de rollup y 8 de top-N en la nube. El portal las pinta: 300 sesiones permitidas,
+1.052 denegadas, 80 bloqueos de IPS, 426 MB.
+
+Dos cosas lo impedían:
+
+- **La actividad estaba atada a la credencial del firewall.** El colector se moría si no podía
+  descifrar el token de la API, pero el syslog llega solo y para atribuirlo basta la IP de origen,
+  que está en el archivo sin cifrar. Un problema de configuración dejaba al cliente sin las dos
+  mitades cuando podía tener una. Ahora el equipo entra igual en la lista, con un adaptador sin
+  token: sus líneas se entienden y su actividad se agrega.
+- **Nadie lo dejó corriendo cinco minutos.** El primer bloque de actividad tarda un tic de subida,
+  y todas las pruebas anteriores duraron menos.
+
+**El adaptador nunca leía los destinos de syslog del FortiGate**: devolvía una lista vacía fija. Sin
+ese dato el producto no puede distinguir *"tu firewall no tiene syslog configurado"* de *"los
+paquetes no llegan"*, que se arreglan de formas opuestas —y es un control de cumplimiento por
+derecho propio: un firewall que no registra nada no cumple ISO 27001 A.8.15 ni PCI DSS 10. Ahora lee
+`log.syslogd` 1 a 4.
+
+**Regla:** una tabla vacía en producción es una funcionalidad sin estrenar, no un detalle de datos.
+Antes de dar por hecho que una parte del producto funciona, hay que preguntarle a la base si alguna
+vez recibió una fila.

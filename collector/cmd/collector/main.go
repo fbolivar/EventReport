@@ -803,35 +803,56 @@ func collect(ctx context.Context, path, passphrase string, logger *slog.Logger) 
 		return err
 	}
 
-	// Un equipo que no se puede abrir se salta; no tumba al colector.
+	// La actividad no necesita la clave del firewall.
 	//
-	// Pasó en la primera instalación real: un equipo de un intento anterior,
-	// cifrado con otra frase de paso, detenía la recolección entera y el
-	// cliente se quedaba sin datos de los equipos que sí funcionaban.
+	// El syslog llega solo, y para atribuir cada línea a su equipo basta la IP
+	// de origen, que está en el archivo sin cifrar. Solo leer la configuración
+	// —los hallazgos, la postura— necesita la credencial. Cuando las dos cosas
+	// iban juntas, una credencial que no abría dejaba al cliente sin actividad
+	// **y** sin configuración, cuando podía tener la mitad.
+	//
+	// Un equipo que no se puede abrir se queda igualmente en la lista: recibe
+	// syslog, y el portal dirá que su configuración no se está leyendo.
+	// Leer las líneas solo necesita saber la marca; la credencial es para la
+	// API. Por eso un equipo cuya clave no abre entra igual en la lista, con un
+	// adaptador sin token: sus líneas se entienden y su actividad se agrega.
 	devices := make([]pipeline.Device, 0, len(file.Devices))
-	skipped := 0
+	legibles := make([]pipeline.Device, 0, len(file.Devices))
 	for _, device := range file.Devices {
 		built, err := buildAdapter(device, passphrase)
 		if err != nil {
-			skipped++
-			logger.Error("no se pudo abrir la credencial de un firewall; se omite",
+			logger.Error("no se pudo abrir la credencial de un firewall; se sigue recibiendo su actividad",
 				"firewall", device.FirewallID,
 				"host", device.Host,
 				"detalle", err,
 				"solucion", "vuelve a conectarlo desde el asistente con la frase correcta")
+
+			sinToken, errMarca := buildAdapterWith(device, "", device.Insecure)
+			if errMarca != nil {
+				logger.Error("marca sin adaptador; se omite este equipo", "firewall", device.FirewallID, "error", errMarca)
+				continue
+			}
+			devices = append(devices, pipeline.Device{
+				FirewallID: device.FirewallID,
+				SourceIP:   device.SourceIP,
+				Adapter:    sinToken,
+			})
 			continue
 		}
-		devices = append(devices, pipeline.Device{
+
+		entry := pipeline.Device{
 			FirewallID: device.FirewallID,
 			SourceIP:   device.SourceIP,
 			Adapter:    built,
-		})
+		}
+		devices = append(devices, entry)
+		legibles = append(legibles, entry)
 	}
 	if len(devices) == 0 {
-		if skipped > 0 {
-			return fmt.Errorf("ningún firewall se pudo abrir con esta frase de paso: vuelve a conectarlos desde el asistente")
-		}
 		return fmt.Errorf("no hay firewalls configurados: agrégalos con el asistente del portal")
+	}
+	if len(legibles) == 0 {
+		logger.Warn("ninguna credencial se pudo abrir: habrá actividad pero no configuración ni hallazgos")
 	}
 
 	listener := syslog.New(file.SyslogAddr)
@@ -866,7 +887,7 @@ func collect(ctx context.Context, path, passphrase string, logger *slog.Logger) 
 
 	// El primero se toma al arrancar: esperar horas a la primera foto deja al
 	// cliente mirando un portal vacío justo cuando acaba de instalar.
-	for _, device := range devices {
+	for _, device := range legibles {
 		if err := enqueueSnapshot(ctx, pending, device); err != nil {
 			logger.Error("no se pudo leer la configuración inicial", "firewall", device.FirewallID, "error", err)
 		}
@@ -909,7 +930,7 @@ func collect(ctx context.Context, path, passphrase string, logger *slog.Logger) 
 			// Un snapshot por intervalo del plan: es lo que refresca los
 			// hallazgos. Sin esto el portal muestra la foto del día del alta y
 			// nunca se entera de que el cliente arregló algo.
-			for _, device := range devices {
+			for _, device := range legibles {
 				if err := enqueueSnapshot(ctx, pending, device); err != nil {
 					logger.Error("no se pudo leer la configuración", "firewall", device.FirewallID, "error", err)
 				}
