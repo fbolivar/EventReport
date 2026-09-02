@@ -276,11 +276,17 @@ func runSetup(args []string, logger *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	listener, err := setup.Listen(*addr)
+	if err != nil {
+		return err
+	}
+	url := "http://" + listener.Addr().String()
+
 	if *open {
-		openBrowser("http://" + *addr)
+		openBrowser(url)
 	}
 
-	fmt.Printf("\n  Abre http://%s para conectar tu firewall.\n  Deja esta ventana abierta: aquí corre el colector.\n\n", *addr)
+	fmt.Printf("\n  Abre %s para conectar tu firewall.\n  Deja esta ventana abierta: aquí corre el colector.\n\n", url)
 
 	// Cuando el técnico conecta el equipo, el colector empieza a medir en esta
 	// misma ventana. Sin esto, el asistente terminaba sin recoger un solo dato
@@ -321,7 +327,7 @@ func runSetup(args []string, logger *slog.Logger) error {
 		}
 	}()
 
-	return setup.Serve(ctx, *addr, device, logger)
+	return setup.Serve(ctx, listener, device, logger)
 }
 
 // identityAccepted comprueba que el portal siga reconociendo a este colector.

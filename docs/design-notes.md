@@ -1059,6 +1059,10 @@ no en UTF-8: una tilde parte la línea y Windows ejecuta los pedazos como comand
 `'clientes' is not recognized as an internal or external command` antes de cualquier otra cosa—.
 El generador quita acentos en vez de confiar en que nadie escriba uno.
 
+**El asistente tiene puertos de repuesto.** Ejecutar el instalador dos veces —o tener un colector
+ya corriendo— hacía morir al segundo con `bind: Only one usage of each socket address...`, en
+inglés y sin explicación. Ahora prueba los diez puertos siguientes y anuncia el que usó.
+
 **Regla:** cada decisión de esta lista se pagó con una instalación real fallida. Un instalador se
 prueba ejecutándolo como lo ejecuta el cliente —sin elevar, con su usuario, con su nombre de
 empresa acentuado— porque ninguno de estos tres fallos aparece leyendo el código.

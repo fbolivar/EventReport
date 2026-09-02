@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -54,12 +55,40 @@ type request struct {
 	Insecure   bool   `json:"insecure"`
 }
 
+// Listen abre el asistente, y si el puerto está ocupado prueba el siguiente.
+//
+// El caso normal es que el técnico ejecute el instalador dos veces, o que haya
+// un colector suyo ya corriendo: quien vio esto en una instalación real recibió
+// `bind: Only one usage of each socket address...` en inglés y sin explicación,
+// y el instalador se cerró. Un puerto de repuesto convierte eso en nada.
+func Listen(addr string) (net.Listener, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, fmt.Errorf("dirección del asistente inválida: %w", err)
+	}
+	first, err := strconv.Atoi(port)
+	if err != nil {
+		return nil, fmt.Errorf("puerto del asistente inválido: %w", err)
+	}
+
+	for port := first; port < first+10; port++ {
+		listener, err := net.Listen("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+		if err == nil {
+			return listener, nil
+		}
+	}
+	return nil, fmt.Errorf(
+		"los puertos %d a %d están ocupados: cierra la ventana del colector que ya está abierta y vuelve a ejecutar el instalador",
+		first, first+9,
+	)
+}
+
 // Serve abre el asistente en 127.0.0.1 y lo mantiene hasta que se cancele el
 // contexto.
 //
 // **Solo escucha en loopback.** Esta página recibe la clave de la API del
 // firewall: exponerla a la red sería regalarla a quien esté en la misma oficina.
-func Serve(ctx context.Context, addr string, device Device, logger *slog.Logger) error {
+func Serve(ctx context.Context, listener net.Listener, device Device, logger *slog.Logger) error {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -136,11 +165,6 @@ func Serve(ctx context.Context, addr string, device Device, logger *slog.Logger)
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("abrir el asistente en %s: %w", addr, err)
-	}
-
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -148,7 +172,7 @@ func Serve(ctx context.Context, addr string, device Device, logger *slog.Logger)
 		_ = server.Shutdown(shutdown)
 	}()
 
-	logger.Info("asistente de instalación abierto", "url", "http://"+addr)
+	logger.Info("asistente de instalación abierto", "url", "http://"+listener.Addr().String())
 	if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 		return err
 	}
