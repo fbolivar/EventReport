@@ -175,16 +175,10 @@ $("conectar").onclick = async () => {
     $("servicio").hidden = false;
     const destinos = (result.syslogTargets || []).map((ip) => ip + ":514").join("  ·  ");
     say(
-      "Listo. El colector ya está midiendo: en unos minutos verás tu firewall en el portal.
-
-" +
-        "Falta un paso en el firewall: apunta su syslog a esta máquina.
-" +
-        (destinos ? "Direcciones de este equipo:  " + destinos + "
-" : "") +
-        "Usa la que esté en la misma red por la que llegas al firewall.
-
-" +
+      "Listo. El colector ya está midiendo: en unos minutos verás tu firewall en el portal.\n\n" +
+        "Falta un paso en el firewall: apunta su syslog a esta máquina.\n" +
+        (destinos ? "Direcciones de este equipo:  " + destinos + "\n" : "") +
+        "Usa la que esté en la misma red por la que llegas al firewall.\n\n" +
         "Instálalo abajo: además de dejarlo arrancando solo, abre el puerto 514 en el " +
         "firewall de Windows, que por defecto lo bloquea.",
       "ok",
@@ -209,10 +203,8 @@ $("instalar").onclick = async () => {
   } catch (error) {
     out.textContent =
       String(error.message) +
-      "
-
-Cierra esta ventana, haz clic derecho sobre el instalador y elige " +
-      "«Ejecutar como administrador».";
+      "\n\nCierra esta ventana, haz clic derecho sobre el instalador y elige " +
+      "\u00abEjecutar como administrador\u00bb.";
     out.className = "msg bad";
     $("instalar").disabled = false;
   }

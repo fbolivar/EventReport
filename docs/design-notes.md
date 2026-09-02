@@ -1063,6 +1063,21 @@ El generador quita acentos en vez de confiar en que nadie escriba uno.
 ya corriendo— hacía morir al segundo con `bind: Only one usage of each socket address...`, en
 inglés y sin explicación. Ahora prueba los diez puertos siguientes y anuncia el que usó.
 
+**Ningún botón del asistente funcionaba.** Un salto de línea dentro de un literal de JavaScript
+—una cadena partida en dos líneas al editar— rompe el script entero: el navegador aborta el
+`<script>` y no queda ni un manejador conectado. El técnico abrió el asistente con el firewall
+delante, pulsó "Probar conexión" y no ocurrió nada, sin un solo mensaje de error. `go build` no
+ve nada, porque para Go es una cadena más.
+
+La página se escribe a mano dentro de una constante de Go, así que nada la compila. Ahora hay un
+test que recorre el script buscando cadenas sin cerrar, y se comprobó que falla con el código roto
+antes de darlo por bueno. Los botones se probaron después en un navegador de verdad: vacío, clave
+rechazada, conexión buena, conectar.
+
+**Regla:** el código que no compila nadie —HTML y JavaScript dentro de una cadena— necesita su
+propia comprobación, y una interfaz se prueba pulsándola. Que el servidor responda bien no dice
+nada sobre si el botón llama al servidor.
+
 **Regla:** cada decisión de esta lista se pagó con una instalación real fallida. Un instalador se
 prueba ejecutándolo como lo ejecuta el cliente —sin elevar, con su usuario, con su nombre de
 empresa acentuado— porque ninguno de estos tres fallos aparece leyendo el código.
