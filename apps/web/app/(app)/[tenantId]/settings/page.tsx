@@ -6,7 +6,7 @@ import { OnboardingWizard } from "@/components/app/settings/onboarding-wizard";
 import { PageHeader } from "@/components/app/shell/page-header";
 import { Surface, SurfaceBody, SurfaceHeader } from "@/components/shared/surface";
 import { Value } from "@/components/shared/value";
-import { BRAND_LABELS, FRAMEWORK_LABELS, MEMBER_ROLE_LABELS } from "@/content/labels";
+import { BRAND_LABELS, FIRMWARE_SUPPORT_NOTES, FRAMEWORK_LABELS, MEMBER_ROLE_LABELS } from "@/content/labels";
 import { BRAND_INSTRUCTIONS } from "@/content/onboarding";
 import { listFrameworks } from "@/lib/data/compliance";
 import {
@@ -91,6 +91,7 @@ export default async function SettingsPage({
               {firewalls.map((firewall) => {
                 const site = siteById(firewall.siteId);
                 const unevaluable = firewall.capabilities.unevaluableRules;
+                const firmwareNote = FIRMWARE_SUPPORT_NOTES[firewall.capabilities.firmwareSupport ?? "verified"];
                 return (
                   <li key={firewall.id} className="py-4">
                     <p className="text-small font-medium">
@@ -121,6 +122,9 @@ export default async function SettingsPage({
                         </dd>
                       </div>
                     </dl>
+                    {firmwareNote ? (
+                      <p className="mt-2 text-micro text-sev-medium">{firmwareNote}</p>
+                    ) : null}
                   </li>
                 );
               })}

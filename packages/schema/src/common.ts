@@ -42,6 +42,13 @@ export interface Capabilities {
   geo: boolean;
   /** Rule codes this brand cannot evaluate at all. */
   unevaluableRules: string[];
+  /**
+   * Hasta dónde llega lo comprobado contra hardware real para esta versión de
+   * firmware. `expected` significa misma generación de API sin verificar;
+   * `untested`, que los campos pueden haber cambiado de nombre —y un campo
+   * renombrado no falla: se lee vacío, que es como aprobar sin mirar—.
+   */
+  firmwareSupport?: "verified" | "expected" | "untested";
 }
 
 export type Severity = "critical" | "high" | "medium" | "low";

@@ -147,3 +147,20 @@ export const IDENTITY_KIND_LABELS = {
   fingerprint: "Equipo, por su huella",
   address: "Dirección de red",
 } as const;
+
+/**
+ * Aviso cuando la versión del firewall no es contra la que se probó el
+ * adaptador.
+ *
+ * Fortinet renombra campos entre versiones mayores, y un campo renombrado no da
+ * error: se lee vacío. Una sección vacía se convierte en "sin hallazgos", que es
+ * la peor forma de fallar en un informe de cumplimiento. Por eso el alcance de
+ * lo probado se dice donde alguien lo va a leer antes de firmar.
+ */
+export const FIRMWARE_SUPPORT_NOTES: Record<string, string> = {
+  verified: "",
+  expected:
+    "Versión de la misma generación que la probada, sin verificar: contrasta los datos con el firewall antes de entregar el informe.",
+  untested:
+    "Versión fuera de las probadas: puede faltar configuración sin que se note. No entregues un informe de este equipo sin avisarnos.",
+};

@@ -1384,3 +1384,23 @@ enseña lo que alcanza —interfaces, políticas, NAT, túneles, licencias, dest
 de los controles que quedarán sin evaluar, **mientras el técnico todavía está en el cliente** y no
 dos días después. De paso usa la frase sellada de la máquina, como `run`: probar un firewall ya
 instalado fallaba con un 401 que parecía culpa del equipo.
+
+
+#### El firmware que nadie ha probado
+
+Fortinet renombra campos entre versiones mayores, y un campo renombrado **no da error**: se lee
+vacío. Una sección vacía se convierte en "sin hallazgos", que es la peor forma de fallar en un
+informe de cumplimiento —y esta vez no hay manera de detectarlo desde dentro, porque el firewall
+responde 200 con una estructura distinta.
+
+Lo único honesto es declarar el alcance. El snapshot lleva `capabilities.firmwareSupport` con tres
+valores: `verified` (7.4, probado contra hardware real), `expected` (misma generación de API, sin
+verificar) y `untested` (todo lo demás). Cambiar la versión "verificada" sin haber probado contra
+ella es exactamente la mentira que este mecanismo existe para evitar, y está dicho así en el código.
+
+El aviso aparece en los tres sitios donde alguien decide: en `collector test` mientras el técnico
+sigue en el cliente, en el asistente al probar la conexión —comprobado en un navegador con las tres
+versiones— y en la tarjeta del equipo en Ajustes, antes de que nadie firme un informe.
+
+**Regla:** cuando el producto no puede saber si se equivocó, lo que declara no es el resultado: es
+hasta dónde llega lo que comprobó.

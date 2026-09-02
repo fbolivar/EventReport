@@ -86,6 +86,13 @@ type Capabilities struct {
 	Identity         bool     `json:"identity"`
 	Geo              bool     `json:"geo"`
 	UnevaluableRules []string `json:"unevaluableRules"`
+
+	// FirmwareSupport dice hasta dónde llega lo comprobado contra hardware real:
+	// "verified", "expected" o "untested". Un adaptador que lee una versión que
+	// nadie probó puede estar leyendo campos renombrados —que no fallan, se leen
+	// vacíos— y el portal tiene que decirlo antes de que alguien firme el
+	// informe.
+	FirmwareSupport string `json:"firmwareSupport,omitempty"`
 }
 
 // Device, Admin, Policy and the rest mirror section 4.1. Only what the rules

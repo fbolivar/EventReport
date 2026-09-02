@@ -57,8 +57,9 @@ var (
 // Cuando una sección no se puede leer —el usuario de API no llega, o el equipo
 // no responde ese endpoint—, sus reglas salen como "no evaluable" y el informe
 // lo dice, en vez de dar por bueno lo que nadie miró.
-func (a *Adapter) capabilitiesFor(adminsOcultos bool, sinLeer unreadable) normalize.Capabilities {
+func (a *Adapter) capabilitiesFor(firmware string, adminsOcultos bool, sinLeer unreadable) normalize.Capabilities {
 	capabilities := a.Capabilities()
+	capabilities.FirmwareSupport = firmwareSupport(firmware)
 
 	if adminsOcultos {
 		capabilities.AdminMFA = false

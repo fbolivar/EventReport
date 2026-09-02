@@ -390,10 +390,28 @@ func (c *collectorDevice) Test(ctx context.Context, host, token string, insecure
 	}
 
 	return setup.Identity{
-		Hostname: snapshot.Device.Hostname,
-		Model:    snapshot.Device.Model,
-		Firmware: snapshot.Device.Firmware,
+		Hostname:        snapshot.Device.Hostname,
+		Model:           snapshot.Device.Model,
+		Firmware:        snapshot.Device.Firmware,
+		FirmwareWarning: avisoDeFirmware(snapshot.Capabilities.FirmwareSupport, snapshot.Device.Firmware),
 	}, nil
+}
+
+// avisoDeFirmware traduce el alcance de lo probado a algo que el técnico pueda
+// decidir sin saber cómo está hecho el adaptador.
+func avisoDeFirmware(support, firmware string) string {
+	switch support {
+	case "untested":
+		return "Este equipo tiene FortiOS " + firmware + ", y el colector está probado contra la " +
+			"7.4. Puede leer parte de la configuración y no darse cuenta de lo que falta, así que " +
+			"no entregues un informe de este firewall sin avisarnos primero."
+	case "expected":
+		return "Este equipo tiene FortiOS " + firmware + ". Es la misma generación que la probada " +
+			"(7.4) y debería funcionar igual, pero no está verificado: revisa que los datos del " +
+			"portal cuadren con lo que ves en el firewall."
+	default:
+		return ""
+	}
 }
 
 func (c *collectorDevice) Connect(ctx context.Context, host, token, passphrase string, insecure bool) (setup.Identity, error) {
@@ -478,11 +496,12 @@ func (c *collectorDevice) Connect(ctx context.Context, host, token, passphrase s
 	c.started <- passphrase
 
 	return setup.Identity{
-		Hostname:      snapshot.Device.Hostname,
-		Model:         snapshot.Device.Model,
-		Firmware:      snapshot.Device.Firmware,
-		SyslogAddr:    file.SyslogAddr,
-		SyslogTargets: setup.LocalAddresses(),
+		Hostname:        snapshot.Device.Hostname,
+		Model:           snapshot.Device.Model,
+		Firmware:        snapshot.Device.Firmware,
+		SyslogAddr:      file.SyslogAddr,
+		SyslogTargets:   setup.LocalAddresses(),
+		FirmwareWarning: avisoDeFirmware(snapshot.Capabilities.FirmwareSupport, snapshot.Device.Firmware),
 	}, nil
 }
 
@@ -1131,6 +1150,22 @@ func runTest(args []string, logger *slog.Logger) error {
 			"licencias", len(snapshot.Licenses),
 			"destinos_syslog", snapshot.Services.SyslogTargets,
 			"ntp", snapshot.Services.NTP)
+
+		// El aviso de versión va antes que nada: si el firmware no es de los
+		// probados, lo demás de este resumen puede estar incompleto sin que se
+		// note, porque un campo renombrado se lee vacío y no da error.
+		switch snapshot.Capabilities.FirmwareSupport {
+		case "untested":
+			logger.Warn("versión de FortiOS no probada: los datos de arriba pueden estar incompletos",
+				"firmware", snapshot.Device.Firmware,
+				"probado_contra", "FortiOS 7.4",
+				"riesgo", "un campo que cambió de nombre se lee vacío y parece 'sin hallazgos'",
+				"solución", "avísanos de esta versión antes de entregar un informe de este equipo")
+		case "expected":
+			logger.Info("versión de la misma generación que la probada, pero sin verificar",
+				"firmware", snapshot.Device.Firmware,
+				"probado_contra", "FortiOS 7.4")
+		}
 
 		if reglas := snapshot.Capabilities.UnevaluableRules; len(reglas) > 0 {
 			logger.Warn("con esta credencial hay controles que no se podrán afirmar",

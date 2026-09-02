@@ -328,7 +328,7 @@ func (a *Adapter) FetchConfig(ctx context.Context) (*normalize.Config, error) {
 	config := &normalize.Config{
 		SchemaVersion: normalize.SchemaVersion,
 		CollectedAt:   time.Now().UTC().Format(time.RFC3339),
-		Capabilities: a.capabilitiesFor(adminsOcultos, unreadable{
+		Capabilities: a.capabilitiesFor(status.firmware(), adminsOcultos, unreadable{
 			nat:      !natOK,
 			certs:    !certsOK,
 			licenses: !licensesOK,

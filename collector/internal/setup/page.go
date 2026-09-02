@@ -19,7 +19,7 @@ const pageHTML = `<!doctype html>
   :root {
     --ink: #0C1B2A; --ink-soft: #5A6B7C; --line: #E2E7EC;
     --paper: #FFFFFF; --mist: #F5F7F9; --brand: #1D4ED8;
-    --ok: #0F766E; --bad: #B3261E;
+    --ok: #0F766E; --bad: #B3261E; --warn: #A16207;
     color-scheme: light;
   }
   * { box-sizing: border-box; }
@@ -48,6 +48,7 @@ const pageHTML = `<!doctype html>
   .msg { margin-top: 1.1rem; font-size: .9rem; white-space: pre-wrap; }
   .msg.ok { color: var(--ok); }
   .msg.bad { color: var(--bad); }
+  .msg.warn { color: var(--warn); }
   .steps { list-style: none; padding: 0; margin: 0 0 1.75rem; display: grid; gap: .5rem; }
   .steps li { display: flex; gap: .6rem; align-items: baseline; font-size: .9rem; color: var(--ink-soft); }
   .steps b { color: var(--ink); font-weight: 600; }
@@ -153,7 +154,12 @@ $("probar").onclick = async () => {
   say("Consultando el equipo…");
   try {
     const result = await call("/api/test", data);
-    say("Responde " + result.hostname + " · " + result.model + " · " + result.firmware, "ok");
+    const responde = "Responde " + result.hostname + " · " + result.model + " · " + result.firmware;
+    if (result.firmwareWarning) {
+      say(responde + "\n\n" + result.firmwareWarning, "warn");
+    } else {
+      say(responde, "ok");
+    }
   } catch (error) {
     say(String(error.message), "bad");
   }
@@ -180,8 +186,9 @@ $("conectar").onclick = async () => {
         (destinos ? "Direcciones de este equipo:  " + destinos + "\n" : "") +
         "Usa la que esté en la misma red por la que llegas al firewall.\n\n" +
         "Instálalo abajo: además de dejarlo arrancando solo, abre el puerto 514 en el " +
-        "firewall de Windows, que por defecto lo bloquea.",
-      "ok",
+        "firewall de Windows, que por defecto lo bloquea." +
+        (result.firmwareWarning ? "\n\n" + result.firmwareWarning : ""),
+      result.firmwareWarning ? "warn" : "ok",
     );
   } catch (error) {
     say(String(error.message), "bad");

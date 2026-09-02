@@ -36,6 +36,11 @@ type Identity struct {
 	// nadie puede apuntar a esa dirección, y adivinarla lleva a apuntar a la
 	// interfaz equivocada — pasó en la primera instalación real.
 	SyslogTargets []string `json:"syslogTargets"`
+	// FirmwareWarning es el aviso cuando la versión del equipo no es de las
+	// probadas. Va aquí y no solo en el registro porque quien decide si sigue
+	// adelante es el técnico que está mirando esta página, no quien lea los
+	// logs mañana.
+	FirmwareWarning string `json:"firmwareWarning,omitempty"`
 }
 
 type State struct {
