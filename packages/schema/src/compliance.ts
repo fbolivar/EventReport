@@ -6,7 +6,14 @@
 import type { Brand, Timestamp } from "./common.ts";
 import type { RuleCode } from "./findings.ts";
 
-export const FRAMEWORKS = ["iso27001", "cis_v8", "pci_dss", "hipaa"] as const;
+export const FRAMEWORKS = [
+  "iso27001",
+  "cis_v8",
+  "pci_dss",
+  "hipaa",
+  "nist_800_53",
+  "cmmc_l2",
+] as const;
 
 export type FrameworkCode = (typeof FRAMEWORKS)[number];
 

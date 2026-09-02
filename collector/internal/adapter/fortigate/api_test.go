@@ -2,6 +2,7 @@ package fortigate
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -177,4 +178,95 @@ func TestTestConnectionFailsOnNonFortigate(t *testing.T) {
 	if err := adapter.TestConnection(context.Background()); err == nil {
 		t.Fatal("una respuesta sin hostname no puede darse por buena")
 	}
+}
+
+func TestConfigNeverCarriesNilLists(t *testing.T) {
+	// En Go una lista nil se serializa como `null`, y el motor de reglas de la
+	// nube hacía `.length` sobre eso: la evaluación entera reventaba por un
+	// firewall sin túneles VPN. Esta prueba mira el JSON, que es lo que viaja.
+	// Un equipo recién sacado de la caja: responde el estado y nada más. Es el
+	// caso que rompía la nube, porque todo lo demás llegaba vacío.
+	adapter := &Adapter{Host: "https://fw", Token: "t", HTTP: &bareHTTP{}}
+
+	config, err := adapter.FetchConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(string(raw), ":null") {
+		t.Fatalf("el snapshot contiene null: %s", raw)
+	}
+}
+
+// bareHTTP imita un equipo recién configurado: responde el estado y devuelve
+// listas vacías en todo lo demás, que es lo que hace un FortiGate de verdad
+// —no un 404—.
+type bareHTTP struct{}
+
+func (b *bareHTTP) Do(request *http.Request) (*http.Response, error) {
+	body := `{"results":[]}`
+	if strings.HasSuffix(request.URL.Path, "monitor/system/status") {
+		body = `{"results":{"hostname":"FGT40F-NEW","serial":"FGT40FTK00000001",` +
+			`"model":"FortiGate-40F","version":"v7.4.4","ha_mode":"standalone"}}`
+	}
+	if strings.Contains(request.URL.Path, "vpn.ssl/settings") ||
+		strings.Contains(request.URL.Path, "system/ntp") ||
+		strings.Contains(request.URL.Path, "log/setting") {
+		body = `{"results":{}}`
+	}
+
+	return &http.Response{
+		StatusCode: 200,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+	}, nil
+}
+
+func TestSerialAndFirmwareComeFromTheRootOfTheResponse(t *testing.T) {
+	// La respuesta real de un FortiGate 40F: serie y versión en la raíz, no
+	// dentro de `results`. Un equipo de verdad se registró sin ninguno de los
+	// dos por leerlos en el sitio equivocado.
+	adapter := &Adapter{Host: "https://fw", Token: "t", HTTP: &realStatusHTTP{}}
+	config, err := adapter.FetchConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if config.Device.Serial != "FGT40FTK22004411" {
+		t.Fatalf("serie = %q", config.Device.Serial)
+	}
+	if config.Device.Firmware != "v7.4.4" {
+		t.Fatalf("firmware = %q", config.Device.Firmware)
+	}
+	if config.Device.Hostname != "FW-GVM" {
+		t.Fatalf("hostname = %q", config.Device.Hostname)
+	}
+}
+
+// realStatusHTTP responde el estado con la forma que devuelve un FortiGate de
+// verdad, y listas vacías en el resto.
+type realStatusHTTP struct{}
+
+func (r *realStatusHTTP) Do(request *http.Request) (*http.Response, error) {
+	body := `{"results":[]}`
+	switch {
+	case strings.HasSuffix(request.URL.Path, "monitor/system/status"):
+		body = `{"http_method":"GET","serial":"FGT40FTK22004411","version":"v7.4.4","build":2571,` +
+			`"results":{"model":"FGT40F","hostname":"FW-GVM","ha_mode":"standalone"}}`
+	case strings.Contains(request.URL.Path, "vpn.ssl/settings"),
+		strings.Contains(request.URL.Path, "system/ntp"),
+		strings.Contains(request.URL.Path, "log/setting"):
+		body = `{"results":{}}`
+	}
+
+	return &http.Response{
+		StatusCode: 200,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+	}, nil
 }

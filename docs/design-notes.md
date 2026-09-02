@@ -838,3 +838,549 @@ SMTP_USER o SMTP_PASSWORD", que es exactamente lo que debe decir hasta que la cu
 El repositorio se saca con CRLF, y `gofmt` espera LF: `gofmt -l` marca archivos que no tienen nada
 mal. Antes de "arreglar" formato, mirar `gofmt -d`: si el diff son líneas completas sin cambios
 visibles, es el fin de línea y hay que dejarlo.
+
+## Bloque 17 — Fase 1 del colector cerrada
+
+Tres de las cuatro Edge Functions que quedaban en esqueleto ya escriben: `ingest-rollups`,
+`ingest-events` y `heartbeat`. La cuarta, `evidence`, es fase 5 por diseño (§6.3: la consulta
+desde el portal llega con el mecanismo de evidencia bajo demanda), y sigue siendo esqueleto a
+propósito.
+
+Del lado del colector, el bucle de ejecución quedó completo: cierra horas, encola eventos
+críticos, toma snapshots de configuración según el plan y reporta calidad del dato en el latido.
+
+Decisiones que quedaron en el código:
+
+- **La comprobación "este firewall es de este colector" vive en un solo sitio**
+  (`_shared/firewall.ts`). Es la que nunca se puede olvidar: sin ella, un colector con
+  credenciales válidas escribiría en los datos de otra empresa cambiando un identificador.
+- **La severidad de un evento la decide EventReport, no el fabricante.** El campo `severity` de
+  un FortiGate viene vacío en la mitad de las líneas que importan —un ingreso administrativo no
+  trae ninguno—, y copiarlo hacía que la nube descartara el evento en silencio.
+- **Un ingreso administrativo se clasifica como `admin`, no como `system`.** FortiGate mete en
+  "system" tanto un reinicio como la entrada de una persona a configurar el firewall. Para el
+  producto no es lo mismo.
+- **Lo que se encola es la forma del contrato**, no la estructura interna del agregador. Encolar
+  la estructura interna acopla el formato del disco con el de la API.
+- **La configuración del plan la decide la nube** y el colector la guarda: snapshots por día,
+  minutos de rollup, días de bóveda. Si la calculara él, un cliente se subiría el cupo editando
+  un archivo local.
+
+#### Auto-blindaje: `null` no es una lista vacía, y apareció tres veces
+
+El primer snapshot de un firewall de verdad tumbó la ingesta con
+`Cannot read properties of null (reading 'length')`. En Go una lista vacía se serializa como
+`null`, y **todo** el lado TypeScript asumía arreglos porque los fixtures siempre los traían.
+Falló tres veces seguidas, en tres capas distintas:
+
+1. el motor de reglas, sobre `config.admins`;
+2. el diff, sobre las colecciones del snapshot guardado;
+3. otra vez el diff y el motor, sobre las listas **dentro** de cada objeto (`policy.src`,
+   `admin.trustedHosts`, `services.ntp`).
+
+Arreglado en los dos lados, que es lo que corresponde: el colector nunca envía `null` —hay una
+prueba que serializa un snapshot de un equipo recién configurado y falla si aparece uno— y el
+motor y el diff normalizan lo que reciben, porque son entrada externa y pueden venir de un
+colector de una versión anterior.
+
+**Regla:** en cualquier frontera entre lenguajes, una colección ausente y una vacía significan lo
+mismo, y quien recibe lo normaliza. Los fixtures no encuentran esto: los escribe la misma persona
+que escribe el consumidor.
+
+#### Verificación
+
+Contra el proyecto de producción, con el colector Go compilado y un FortiGate simulado con
+certificado autofirmado:
+
+| Vía | Resultado |
+|---|---|
+| `enroll` | Colector registrado con los parámetros del plan |
+| `device add` | Equipo dado de alta; token cifrado en disco |
+| Snapshot de configuración | Aceptado; **6 hallazgos** derivados de la configuración real del equipo |
+| 600 líneas de syslog | Agregadas por hora; 11 eventos críticos encolados |
+| `ingest-events` | Aceptado y visible en el portal |
+| `ingest-rollups` | Aceptado; responde hasta qué hora, para que el colector purgue su búfer |
+| `heartbeat` | Aceptado; el colector aparece con EPS, descartes y desfase de reloj |
+
+Los hallazgos que produjo el equipo simulado son exactamente los que su configuración merece:
+administración expuesta en WAN, administrador sin segundo factor y sin hosts de confianza,
+retención insuficiente, sin NTP y sin destino de syslog adicional.
+
+## Bloque 18 — Instalación sin comandos
+
+Un instalador que pide escribir comandos ya perdió a la mitad de los clientes. El onboarding
+quedó así: **descargar, doble clic, dos campos en el navegador**.
+
+- El portal genera un instalador **con el token de enrolamiento dentro** (`.ps1` para Windows,
+  `.sh` para Linux). No hay nada que copiar ni pegar, y el token —que solo se muestra una vez
+  porque en la base hay un hash— viaja dentro del archivo en vez de por un chat.
+- El script descarga el binario del bucket público `downloads`, ejecuta `collector setup` y el
+  asistente se abre solo en el navegador.
+- El binario se publica desde el propio proyecto. No hay que ir a buscarlo a ningún otro lado.
+
+#### Por qué la clave del firewall se pide en la máquina y no en el portal
+
+Es la decisión de fondo del bloque. Sería más cómodo pedir la IP y el token del firewall en
+Ajustes, pero entonces esa credencial viajaría al SaaS y quedaría en nuestra base: **un robo de
+nuestra base daría acceso a los firewalls de todos los clientes**. Es exactamente lo que el
+producto promete que no pasa (§4).
+
+La salida es un asistente que sirve el propio colector en `127.0.0.1:8899`: interfaz gráfica, sin
+comandos, y la credencial no sale de la máquina. La página escucha **solo en loopback** —quien
+esté en la misma oficina no puede abrirla— y no carga nada de internet, porque en una instalación
+la máquina puede no tener salida todavía.
+
+#### Los mensajes de error son parte del producto
+
+`x509: certificate signed by unknown authority` no le dice nada a quien está instalando. El
+asistente traduce: *"El equipo usa un certificado propio. Elige «Aceptar el certificado
+autofirmado» y vuelve a intentar."* Lo mismo con 401 —revisa la clave y los hosts de confianza— y
+con un tiempo de espera agotado. **Regla:** un error que el usuario puede corregir se escribe en
+términos de lo que tiene que hacer, no de lo que falló por dentro.
+
+#### Verificación
+
+Recorrido completo como un cliente, contra producción: se pulsó *Agregar colector* en el portal,
+se descargó `instalar-eventreport-acme.ps1`, se ejecutó, el asistente se abrió en el navegador, se
+llenaron dirección y clave, *Probar conexión* respondió `FGT60F-LAB · FortiGate 60F · v7.4.4`, y
+*Conectar* dejó el equipo registrado y el colector midiendo. Cero comandos escritos a mano.
+
+#### Dos fallos que solo aparecieron con hardware real
+
+**El `.ps1` no se puede ejecutar.** Windows bloquea por política cualquier script de PowerShell
+descargado de internet: el cliente ve un error de seguridad en rojo y abandona. El instalador pasó
+a ser un `.cmd`, que se ejecuta con doble clic sin tocar ninguna política y usa `curl.exe`, que
+viene en Windows desde 2018. De regalo, un archivo bajado con curl no queda marcado como
+"procedente de internet", así que el binario tampoco se bloquea.
+
+**El firewall llegó sin serie ni firmware.** Un FortiGate 40F de verdad se registró con
+`firmware: desconocido` y serie vacía. La causa: FortiOS devuelve **la serie y la versión en la
+raíz** de `monitor/system/status`, no dentro de `results`. Las pruebas no lo veían porque el
+simulador los ponía donde el código los esperaba — un simulador escrito por quien escribe el
+cliente confirma sus propios supuestos.
+
+Arreglado en los dos lados: el adaptador lee la raíz y cae a `results` si no está, con una prueba
+que usa la forma real de la respuesta; y `register-device` ya no usa una serie vacía como
+identidad —dos equipos sin serie se pisarían entre sí—, sino que cae al nombre del equipo.
+
+**Regla:** un simulador sirve para ejercitar el camino, no para validar el contrato. El contrato
+se confirma contra un equipo real o contra la documentación del fabricante.
+
+#### El asistente decía "midiendo" sin medir
+
+Tras conectar el firewall, la pantalla anunciaba que el colector quedaba midiendo — y no medía:
+`setup` registraba el equipo y ahí terminaba. El cliente cerraba la ventana y no llegaba un solo
+dato. Se vio con el FortiGate 40F real: equipo registrado con su serie y su firmware correctos,
+**cero snapshots**.
+
+El bucle de recolección se separó de la orden `run` y ahora arranca solo en cuanto hay un equipo
+conectado, en la misma ventana. Cada equipo que se conecta lo reinicia: el colector lee sus
+firewalls al arrancar, así que uno agregado después no existiría para él hasta el próximo
+reinicio, y una sede con dos firewalls es lo normal.
+
+**Regla:** una pantalla no puede afirmar un estado que el programa no ha alcanzado. Si dice
+"midiendo", que esté midiendo.
+
+#### Un equipo viejo tumbaba el colector entero
+
+En la primera instalación real, el colector arrancó y murió en la misma línea:
+
+```
+msg=midiendo
+msg="el colector se detuvo" error="no se pudo descifrar: ¿frase de paso incorrecta?"
+```
+
+El archivo de configuración conservaba un firewall de un intento anterior, cifrado con otra frase
+de paso. El arranque abría **todas** las credenciales y devolvía el primer error, así que un
+equipo obsoleto dejaba sin datos a los equipos que sí funcionaban.
+
+Dos cambios:
+
+- **Un equipo que no se puede abrir se omite**, con un registro que dice cuál y qué hacer. Solo si
+  ninguno abre se detiene, y entonces el mensaje explica que hay que reconectarlos.
+- **El asistente limpia lo que estorba**: al conectar, el técnico acaba de demostrar cuál es la
+  frase correcta, así que las entradas que no abren con ella —o que apuntan al mismo equipo o al
+  mismo host— se descartan en vez de acumularse.
+
+**Regla:** en un proceso que atiende a varios equipos, el fallo de uno se aísla. Un error de
+configuración de ayer no puede dejar ciego lo que hoy funciona.
+
+#### Un ámbar eterno: el modo medición no terminaba nunca
+
+El diseño (§5) dice que el colector mide 24 h desde el enrolamiento y después empieza a vigilar.
+Nadie lo implementó: el latido conservaba `measuring` para siempre, así que en el portal el
+colector se quedaba en ámbar de por vida. El primer cliente real lo leyó como "no veo nada
+activo", que es exactamente lo que parece.
+
+Dos cambios, en el sitio que corresponde a cada uno:
+
+- El **latido** pasa el colector a `active` cuando se cumplen las 24 h desde el enrolamiento. La
+  regla vive en el servidor, no en el colector: un cliente no debe poder acortarse el período de
+  medición.
+- La **pantalla** dice cuánto falta: "En medición · empieza a vigilar en 24 h". Un estado en
+  ámbar sin explicación se lee como avería y termina en una llamada de soporte.
+
+**Regla:** un estado transitorio tiene que decir cuándo termina. Si no se puede decir, no es un
+estado, es un problema.
+
+## Bloque 19 — El colector deja de depender de una ventana abierta
+
+Hasta aquí el colector moría al cerrar la consola: una demo, no una instalación. Ahora se puede
+dejar puesto en un cliente.
+
+**Arranque automático con `schtasks`, no con el SCM.** Un servicio de verdad obliga a hablar el
+protocolo del Service Control Manager, y eso exige una dependencia externa. El colector es de
+biblioteca estándar a propósito (§6.1): lo que se instala en la red de un cliente se audita mejor
+cuanto menos trae dentro. Una tarea al arranque cumple lo que importa —se levanta sola, sobrevive
+a reinicios, no necesita que nadie inicie sesión— y se quita con un comando.
+
+**La frase de paso, sellada con DPAPI de máquina.** Para arrancar sin nadie delante, el colector
+tiene que abrir la credencial del firewall solo. Guardar la frase en texto plano sería regalar el
+token a quien copie la carpeta; sellada con DPAPI en ámbito de máquina, **el archivo no sirve en
+otro equipo**. Quien tenga administrador local puede abrirlo, pero esa persona ya podía leer la
+configuración y ejecutar el colector: no se pierde nada que no estuviera perdido. Fuera de Windows
+no hay DPAPI y la protección real son los permisos `0600` del archivo; está dicho así en el
+código y en la guía, sin fingir que es cifrado.
+
+**El instalador no se eleva.** Se elevó al principio, por no pedir administrador al final
+cuando el técnico ya había llenado todo. Costó caro: un proceso elevado corre como otro usuario y
+pierde la VPN por la que el técnico llega al firewall —clientes como NetExtender montan el túnel
+por usuario—, así que el asistente abría y no podía conectar con nada. Ahora se eleva un solo
+paso, el de instalar el servicio, que es el único que lo necesita.
+
+**La configuración vive en `%LOCALAPPDATA%`.** Estuvo en `%ProgramData%` mientras el instalador
+se elevaba, porque una ruta de máquina significa lo mismo para el administrador y para SYSTEM. Sin
+elevación deja de servir: la carpeta que creó un administrador no la puede escribir un usuario
+normal, y `curl` fallaba con un error de escritura que el instalador reportaba como "revisa tu
+conexión a internet". SYSTEM puede leer LOCALAPPDATA, así que el servicio sigue funcionando.
+
+**El instalador es ASCII puro.** `cmd.exe` lee el archivo con la tabla de caracteres del sistema,
+no en UTF-8: una tilde parte la línea y Windows ejecuta los pedazos como comandos —el técnico vio
+`'clientes' is not recognized as an internal or external command` antes de cualquier otra cosa—.
+El generador quita acentos en vez de confiar en que nadie escriba uno.
+
+**El asistente tiene puertos de repuesto.** Ejecutar el instalador dos veces —o tener un colector
+ya corriendo— hacía morir al segundo con `bind: Only one usage of each socket address...`, en
+inglés y sin explicación. Ahora prueba los diez puertos siguientes y anuncia el que usó.
+
+**Ningún botón del asistente funcionaba.** Un salto de línea dentro de un literal de JavaScript
+—una cadena partida en dos líneas al editar— rompe el script entero: el navegador aborta el
+`<script>` y no queda ni un manejador conectado. El técnico abrió el asistente con el firewall
+delante, pulsó "Probar conexión" y no ocurrió nada, sin un solo mensaje de error. `go build` no
+ve nada, porque para Go es una cadena más.
+
+La página se escribe a mano dentro de una constante de Go, así que nada la compila. Ahora hay un
+test que recorre el script buscando cadenas sin cerrar, y se comprobó que falla con el código roto
+antes de darlo por bueno. Los botones se probaron después en un navegador de verdad: vacío, clave
+rechazada, conexión buena, conectar.
+
+**Regla:** el código que no compila nadie —HTML y JavaScript dentro de una cadena— necesita su
+propia comprobación, y una interfaz se prueba pulsándola. Que el servidor responda bien no dice
+nada sobre si el botón llama al servidor.
+
+**Regla:** cada decisión de esta lista se pagó con una instalación real fallida. Un instalador se
+prueba ejecutándolo como lo ejecuta el cliente —sin elevar, con su usuario, con su nombre de
+empresa acentuado— porque ninguno de estos tres fallos aparece leyendo el código.
+
+#### "Actividad" vacía sin explicar por qué
+
+Un colector vivo con cero eventos por segundo no está roto: es que el firewall no le envía sus
+registros. Sin decirlo, el cliente ve la pantalla de Actividad en blanco y culpa al producto. La
+tarjeta del colector ahora avisa: *"No está llegando syslog. Apunta el firewall a este colector
+para ver actividad y eventos."*
+
+**Regla:** cuando el producto no puede mostrar algo porque falta un paso del cliente, lo dice en
+el sitio donde se nota la ausencia.
+
+#### Elevar el instalador rompió el acceso al firewall
+
+Al añadir el arranque automático hice que el instalador pidiera administrador **al principio**.
+Parecía cortés —resolver los permisos de una vez— y rompió la instalación real: un proceso
+elevado corre en otro contexto de usuario, y los clientes de VPN como SonicWall NetExtender
+montan el túnel **por usuario**. Elevado, el asistente dejaba de alcanzar el firewall al que el
+técnico sí llegaba desde su sesión. El síntoma en el cliente fue "no deja probar ni conectar".
+
+El asistente vuelve a correr sin elevar, y el permiso se pide **solo en el último paso**: el botón
+"Instalar como servicio" se relanza a sí mismo con UAC. Windows muestra el aviso una vez, cuando
+hace falta y para lo que hace falta.
+
+**Regla:** pedir privilegios antes de necesitarlos no es prolijidad, es cambiar el entorno de todo
+lo que viene después. Se eleva lo que necesita elevación, y nada más.
+
+## Bloque 20 — Lo que la primera instalación real dejó al descubierto
+
+Cinco defectos, todos del mismo tipo: el producto sabía algo y no lo decía, o decía algo que no
+era cierto.
+
+**El puerto del syslog estaba cerrado.** Windows bloquea el tráfico entrante en los tres perfiles
+por defecto. El firewall del cliente enviaba sus registros contra un puerto cerrado y el portal
+mostraba "Actividad" vacía. Ahora la instalación del servicio —que ya pide administrador— abre
+UDP 514 en el mismo paso. No es una tarea aparte para el técnico: es parte de instalar.
+
+**El asistente decía `0.0.0.0:514`.** Nadie puede apuntar un firewall a esa dirección. El técnico
+tiene que adivinar cuál de sus interfaces es la buena, y adivinó mal —yo también, al recomendarle
+la del adaptador equivocado—. Ahora el colector lista **sus IP reales** y dice cuál criterio usar:
+la de la red por la que se llega al firewall.
+
+**El portal mostraba una IP de ejemplo.** El asistente de Ajustes traía `10.10.0.9` escrita a
+mano. Alguien la copia. Ahora muestra la dirección real del colector, que llega en el latido, y si
+no hay colector todavía lo dice en vez de inventar una.
+
+**No se podían quitar colectores.** Instalar deja rastro: un intento fallido, una prueba, una
+máquina que se cambió. Sin forma de retirarlos, la lista se llena de colectores muertos y deja de
+significar nada.
+
+**No se podía dar de alta un cliente.** El portal servía a las empresas que alguien hubiera
+sembrado en la base. Para un proveedor que vende a varias PYMES eso no es un detalle, es la mitad
+del producto. `create_tenant` crea la empresa, la membresía de quien la crea, los cupos de su plan
+y su primera sede: una función que lo hace entero, porque hacerlo en cuatro pasos deja empresas a
+medias cuando uno falla —y una empresa sin cupos rechaza la primera ingesta sin explicar por qué.
+
+**Regla de todo el bloque:** cuando el producto depende de un dato que solo él conoce —una IP, un
+puerto, un estado—, decirlo es parte del trabajo. Y cuando no lo conoce, decir que no lo conoce,
+en vez de poner un ejemplo que alguien copiará.
+
+#### Dos cosas que estaban hechas y no se podían usar
+
+**La vista de clientes no estaba en el menú.** Existía en `/mssp` desde el bloque 14 y había que
+escribir la dirección a mano. Un proveedor entra y sale de sus empresas todo el día. Ahora aparece
+en la barra —solo para quien administra más de una empresa: a un cliente con una sola, una vista
+de "clientes" no le dice nada—.
+
+Eso obligó a un cliente **sin acotar** a la empresa de la URL: la pregunta es justamente "cuántas
+empresas ve este usuario", y el cliente acotado siempre respondería una. Se llama
+`createUnscopedClient` para que aparezca en cualquier búsqueda: usarlo dentro del portal de un
+cliente es el error que el acotado evita.
+
+**El modo medición no se podía terminar.** Las 24 h son una recomendación, no una condena: quien
+instala sabe si su cliente puede esperar un día. Un ámbar de 24 horas sin nada que hacer al
+respecto se lee como avería. Ahora hay "Empezar a vigilar ahora", y el latido respeta esa decisión
+en vez de devolver el colector a medición.
+
+**Regla:** una función que existe pero no tiene camino en la interfaz no existe. Y un estado que
+el usuario no puede cambiar tiene que explicarse solo.
+
+#### "Las herramientas del mercado son instantáneas"
+
+La comparación era justa y descubrió dos cosas.
+
+**El disco libre nunca iba a llegar.** El latido enviaba `diskFreeGb: 0` escrito a mano. No era
+una espera: era un dato que el colector no medía. Ahora lo mide del disco donde vive la bóveda
+—`GetDiskFreeSpaceEx` en Windows, `statfs` fuera—, que es lo que decide cuántos días de registros
+caben. Un colector con el disco lleno deja de guardar y nadie se entera hasta que hace falta la
+evidencia.
+
+**La actividad tardaba hasta 65 minutos.** El diseño (§6.6) manda las horas **cerradas**, lo cual
+es correcto para el informe y desastroso para el primer día: el cliente instala, mira Actividad y
+no hay nada. Ahora el colector sube también **la hora en curso** en cada envío, cada cinco minutos.
+
+Lo que hace seguro ese adelanto ya estaba en el esquema: la clave del upsert es
+(firewall, hora, tipo, acción), así que la hora parcial se sobrescribe con la completa cuando
+cierra. Enviar dos veces la misma hora no duplica nada — la decisión de idempotencia tomada al
+diseñar la tabla es la que permite este cambio sin tocarla.
+
+**Regla:** "es por diseño" no es respuesta cuando el diseño se pensó para el informe mensual y el
+usuario está mirando la pantalla el primer día. Lo que cuesta es lo mismo; lo que cambia es
+cuándo se ve.
+
+#### Retirar un colector dejaba una identidad muerta en el disco
+
+El operador retiró el colector desde el portal, volvió a bajar el instalador y el colector
+"no hacía nada": arrancaba, decía que medía, y cada envío se rechazaba en silencio. La causa: el
+archivo local seguía con el identificador del colector borrado, y `setup` respetaba la
+configuración existente sin comprobar que siguiera valiendo.
+
+Ahora, antes de respetar una configuración previa, el colector pregunta si el portal todavía lo
+reconoce. Si le responden 401 o 403 —y solo entonces— se vuelve a registrar con el token del
+instalador. **Un problema de red no cuenta**: quedarse sin internet un minuto no puede borrar el
+registro de un colector que funciona.
+
+Reproducido con el identificador muerto real antes de arreglarlo, y verificado después:
+`el registro anterior ya no vale; se vuelve a registrar este equipo`.
+
+**Regla:** un identificador guardado en disco es una suposición sobre el estado del servidor.
+Antes de construir encima, se comprueba — y el fallo se distingue de la falta de red, porque
+tratarlos igual borra lo que funciona.
+
+
+#### Un colector vivo y un portal vacío
+
+El técnico conectó su FortiGate, el asistente dijo que estaba midiendo, cerró la ventana —ya había
+terminado— y el portal mostró el colector activo con cero hallazgos, cero postura y cero
+cumplimiento. El snapshot no se había perdido: estaba **en su disco**, leído y firmado, esperando
+al reloj de subida de cinco minutos.
+
+Tres cambios:
+
+- **La configuración inicial se sube en el acto**, no en el siguiente tic. Lo que el cliente
+  compara no es nuestro intervalo: es que al terminar de instalar, su firewall esté ahí.
+- **`collector flush`** sube lo que quedó pendiente sin volver a tocar el firewall. Los datos
+  encolados ya están leídos: solo falta firmarlos. Sirve para rescatar exactamente este caso.
+- **La comprobación de identidad ya no manda ceros.** Enviaba `diskFreeGb: 0` en una llamada
+  interna nuestra, y el portal pintaba "Disco libre 0 GB" en rojo sobre un disco sano.
+
+**Regla:** un dato que el cliente ya generó no puede quedarse esperando un temporizador nuestro.
+El primer dato de todos, menos todavía: es el único que decide si el producto sirve o no.
+
+
+#### La mitad del producto que nunca había recibido un dato
+
+Hasta esta sesión, `rollups_hourly`, `rollups_topn` y `critical_events` tenían **cero filas en toda
+la base**, desde el primer día. La actividad, los eventos y todo lo que nace del syslog jamás se
+habían probado con tráfico real. Se comprobó midiendo, no opinando: 436 paquetes en 90 segundos
+desde un FortiGate 40F real, el parser entendiendo sus líneas de FortiOS 7.4.12, y a los cinco
+minutos 7 filas de rollup y 8 de top-N en la nube. El portal las pinta: 300 sesiones permitidas,
+1.052 denegadas, 80 bloqueos de IPS, 426 MB.
+
+Dos cosas lo impedían:
+
+- **La actividad estaba atada a la credencial del firewall.** El colector se moría si no podía
+  descifrar el token de la API, pero el syslog llega solo y para atribuirlo basta la IP de origen,
+  que está en el archivo sin cifrar. Un problema de configuración dejaba al cliente sin las dos
+  mitades cuando podía tener una. Ahora el equipo entra igual en la lista, con un adaptador sin
+  token: sus líneas se entienden y su actividad se agrega.
+- **Nadie lo dejó corriendo cinco minutos.** El primer bloque de actividad tarda un tic de subida,
+  y todas las pruebas anteriores duraron menos.
+
+**El adaptador nunca leía los destinos de syslog del FortiGate**: devolvía una lista vacía fija. Sin
+ese dato el producto no puede distinguir *"tu firewall no tiene syslog configurado"* de *"los
+paquetes no llegan"*, que se arreglan de formas opuestas —y es un control de cumplimiento por
+derecho propio: un firewall que no registra nada no cumple ISO 27001 A.8.15 ni PCI DSS 10. Ahora lee
+`log.syslogd` 1 a 4.
+
+**Regla:** una tabla vacía en producción es una funcionalidad sin estrenar, no un detalle de datos.
+Antes de dar por hecho que una parte del producto funciona, hay que preguntarle a la base si alguna
+vez recibió una fila.
+
+
+#### Un firewall que dice tener administradores y no los enseña
+
+Contra el FortiGate 40F real, `cmdb/system/admin` respondió **200** con `results: []` y `size: 2`:
+el equipo declara dos cuentas y el usuario de API no tiene permiso para verlas. El colector lo
+guardaba como "no hay administradores", y tres controles de acceso —MFA, hosts de confianza y
+número de superadministradores— pasaban en silencio.
+
+En un producto de cumplimiento eso es lo peor que puede ocurrir: **un aprobado que nadie miró**. El
+mecanismo correcto ya existía (`capabilities.unevaluableRules`, §15.4), solo que ningún adaptador lo
+usaba. Ahora, cuando el firewall dice tener cuentas que no deja leer, FW-002, FW-003 y FW-004 salen
+como *no evaluables* y el informe lo dice.
+
+Verificado contra el equipo real: `adminMfa: false · sin evaluar: [FW-002, FW-003, FW-004]`.
+
+**Regla:** una lista vacía tiene dos significados —"no hay" y "no pude ver"— y solo uno de los dos
+se puede escribir en un informe de cumplimiento. Cuando el equipo da pistas de la diferencia
+(`size` frente a `results`), hay que leerlas.
+
+#### Lo que todavía no se lee del FortiGate
+
+`services.ntp` y `services.dns` viajan vacíos: el adaptador no los pide y ninguna regla los mira.
+Hoy no causan un hallazgo falso porque nadie los evalúa, pero el equipo real tiene
+`ntpsync: enable · type: fortiguard`, así que el dato existe y el día que se escriba una regla de
+sincronización horaria hay que pedirlo antes, no después.
+
+
+#### "Por usuario" no existe en una PYME
+
+Medido sobre 429 líneas del FortiGate de un cliente real: `user` aparece en 47 —once por ciento—,
+`srcname` en 67, `srcmac` en 311 y `srcip` en 426. Una pantalla que agrupe solo por usuario
+autenticado sale **vacía** en la empresa promedio, que es justo el cliente al que se le vende.
+
+La atribución baja entonces por una escalera y guarda en qué escalón se quedó:
+
+    usuario    sesión iniciada contra el directorio o el portal cautivo
+    equipo     nombre anunciado por DHCP
+    huella     sistema operativo y MAC
+    dirección  la IP, que siempre está
+
+Contra el tráfico real, el reparto fue 199 direcciones, 14 huellas, 11 equipos y **3 usuarios**:
+sin escalera, la pantalla habría tenido tres filas. Con ella muestra `GVM-CONTABILIDAD`,
+`GVMBOGBOD01` y `viviana.galeano`, cada uno con sus aplicaciones y sus denegadas.
+
+El portal enseña el escalón junto al nombre. Un informe que llama "usuario" a una dirección IP es
+una afirmación que no se sostiene delante de un auditor, y el parser hacía justo eso: copiaba
+`srcname` —el nombre de un equipo— dentro de `user`. Ya no.
+
+**Regla:** cuando un dato ideal falta en el noventa por ciento de los casos, el diseño no es
+exigirlo: es degradar con honestidad y decir qué se está mirando en su lugar.
+
+#### Un 200 con cero filas guardadas
+
+El colector agregaba la actividad por identidad, la enviaba, la nube respondía **200**, y en el
+portal no aparecía nada. Desde el colector, un envío aceptado que no guarda nada es idéntico a uno
+correcto. Ahora cada envío registra lo que la nube dijo que aceptó:
+
+    envío aceptado  tipo=rollups  respuesta={"counters":9,"topn":229,"identities":135}
+
+Y `sendPending` devuelve cuántos rechazó, en vez de que quien llama lo suponga: el mensaje
+"configuración inicial enviada" se imprimía incluso cuando la nube había devuelto 429.
+
+**Regla:** registrar que una llamada respondió bien no es registrar que hizo algo. Cuando el efecto
+está del otro lado de la red, lo que se anota es el efecto.
+
+
+#### NIST 800-53 y CMMC: los mismos datos, más marcos
+
+La evidencia técnica ya se recogía; lo que faltaba era el mapeo. Se añadieron 29 controles de NIST
+SP 800-53 Rev. 5 y 23 prácticas de CMMC 2.0 nivel 2, con sus 88 filas de `rule_controls`, mapeadas
+regla por regla contra **lo que cada una mide de verdad** —leyendo su título, no adivinando por el
+código—. Contra el firewall real: 23 controles NIST cumplen y 6 no.
+
+**STIG no entra, y es a propósito.** Sus identificadores V-ID son específicos de cada dispositivo y
+de cada versión del benchmark, y se publican en los XCCDF de DISA. Escribirlos de memoria sería
+inventar referencias que un auditor comprueba en un catálogo público, y la primera que no exista
+tumba la credibilidad del informe entero. El camino es importar el XCCDF oficial del SRG de
+firewall; hasta entonces, el marco no se ofrece.
+
+**Regla:** en un producto de cumplimiento, una referencia inventada cuesta más que una funcionalidad
+que falta. Lo que no se puede citar con la fuente delante, no se publica.
+
+
+#### Cinco reglas que aprobaban sin mirar
+
+El adaptador de FortiGate consultaba cuatro endpoints. `certs`, `licenses`, `nat`, `vpn` y
+`dns/ntp` viajaban vacíos en todos los snapshots —nadie los pedía— y FW-010, FW-011, FW-012, FW-013
+y FW-016 evaluaban listas vacías: cero hallazgos, cero avisos, un aprobado limpio en el informe. El
+mismo fallo que las cuentas de administrador ocultas, cinco veces.
+
+Ahora se leen los VIP, los túneles IPsec, el portal SSL-VPN, los certificados que no son de fábrica,
+las licencias y DNS/NTP. Contra el firewall real aparecieron **dos hallazgos que llevaban meses
+invisibles** —el portal SSL-VPN sin segundo factor y un túnel con IKEv1 y aes128— y desapareció **un
+falso positivo**: el equipo sincroniza la hora con FortiGuard, que no aparece en la lista de
+servidores NTP, y el informe llevaba tiempo diciendo "sin NTP" sobre un reloj correcto. La postura
+pasó de 63 a 54 al dejar de mirar hacia otro lado.
+
+Cada consulta va por separado y ninguna tumba el snapshot: un firewall que no deja leer sus
+certificados sigue aportando sus políticas. Lo que no se pudo leer entra en `unevaluableRules`.
+
+**Regla:** en un producto de cumplimiento, la pregunta no es "¿qué reglas tengo?" sino "¿qué está
+mirando cada regla?". Una regla sobre datos que nadie recoge no es una comprobación: es un aprobado
+automático con nombre técnico.
+
+
+#### Un FortiGate partido en dominios virtuales
+
+De un 100F para arriba es normal partir el equipo en VDOM: una sede por dominio, o —si lo
+administra un proveedor— **un cliente por dominio**. Cada uno tiene sus propias políticas,
+interfaces, publicaciones y túneles, y la API devuelve por defecto los del dominio de
+administración. El adaptador no pedía el resto: se auditaba uno y los demás quedaban aprobados sin
+que nadie los mirara. En un equipo de MSSP, lo que faltaba no era un campo: era un cliente entero.
+
+Ahora se enumeran con `cmdb/system/vdom` y cada consulta por dominio se acota con `?vdom=`
+—verificado contra un FortiGate real, que con un solo dominio devuelve `root` y todo sigue igual—.
+Con más de uno, políticas, interfaces y túneles llevan el dominio delante: dos políticas con id 1 en
+clientes distintos no pueden compartir identificador, o el hallazgo de una pisa al de la otra.
+
+Y si el usuario de API no puede enumerarlos, FW-006, FW-007 y FW-010 salen **no evaluables**: pudo
+quedar medio firewall sin revisar y eso no se puede afirmar.
+
+**Regla:** el alcance de una revisión es parte del resultado. Decir "cumple" sobre lo que se miró,
+cuando no se sabe cuánto quedó fuera, es la misma mentira que aprobar una lista vacía.
+
+#### `collector test` decía "conexión correcta" y nada más
+
+Conectar no es poder leer. Con la misma credencial, un usuario de API sin permisos ve el equipo y
+no ve sus cuentas ni sus certificados, y eso decide qué podrá afirmar el informe. Ahora `test`
+enseña lo que alcanza —interfaces, políticas, NAT, túneles, licencias, destinos de syslog— y avisa
+de los controles que quedarán sin evaluar, **mientras el técnico todavía está en el cliente** y no
+dos días después. De paso usa la frase sellada de la máquina, como `run`: probar un firewall ya
+instalado fallaba con un 401 que parecía culpa del equipo.

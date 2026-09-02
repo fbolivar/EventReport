@@ -3,7 +3,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { revalidatePath } from "next/cache";
 
-import { tenantUuid } from "@/lib/data/tenant";
+import { getTenant, tenantUuid } from "@/lib/data/tenant";
+import { linuxInstaller, windowsInstaller } from "./installer";
 import { createClient } from "@/lib/supabase/server";
 
 export interface EnrolmentState {
@@ -11,6 +12,8 @@ export interface EnrolmentState {
   /** El token en claro. Existe solo en esta respuesta y no se vuelve a mostrar. */
   token?: string;
   command?: string;
+  /** El instalador, ya con el token dentro: el cliente no copia nada. */
+  installer?: { windows: string; linux: string; filename: string };
 }
 
 /** Vale 24 horas: suficiente para instalar hoy, inútil si se filtra mañana. */
@@ -70,9 +73,31 @@ export async function createEnrolmentToken(
   revalidatePath(`/${tenantSlug}/settings`);
 
   const base = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const tenant = await getTenant(tenantSlug);
+  const downloads = `${base}/storage/v1/object/public/downloads`;
+  const input = {
+    token,
+    supabaseUrl: base,
+    tenantName: tenant?.name ?? tenantSlug,
+    downloadUrl: "",
+  };
+
   return {
     token,
-    command: `collector enroll -token ${token} -url ${base}`,
+    // El comando queda para quien prefiera consola; el camino normal es el
+    // instalador, que no pide escribir nada.
+    command: `collector setup -token ${token} -url ${base}`,
+    installer: {
+      windows: windowsInstaller({
+        ...input,
+        downloadUrl: `${downloads}/eventreport-collector-windows-amd64.exe`,
+      }),
+      linux: linuxInstaller({
+        ...input,
+        downloadUrl: `${downloads}/eventreport-collector-linux-amd64`,
+      }),
+      filename: `instalar-eventreport-${tenantSlug}`,
+    },
   };
 }
 
@@ -95,5 +120,60 @@ export async function revokeEnrolmentToken(
   if (error) return { error: "No pudimos revocar el token." };
 
   revalidatePath(`/${tenantSlug}/settings`);
+  return {};
+}
+
+/**
+ * Retira un colector.
+ *
+ * Instalar deja rastro: un intento fallido, una prueba, una máquina que se
+ * cambió. Sin forma de quitarlos, la lista se llena de colectores muertos y
+ * deja de significar nada. Los equipos que servía quedan sin colector, no se
+ * borran: sus hallazgos son historia del cliente.
+ */
+export async function removeCollector(
+  _previous: EnrolmentState,
+  formData: FormData,
+): Promise<EnrolmentState> {
+  const tenantSlug = String(formData.get("tenant") ?? "");
+  const collectorId = String(formData.get("collector") ?? "");
+  if (!tenantSlug || !collectorId) return { error: "Falta el colector." };
+
+  const supabase = await createClient();
+
+  const { error } = await supabase.from("collectors").delete().eq("id", collectorId);
+  if (error) return { error: "No pudimos retirar el colector." };
+
+  revalidatePath(`/${tenantSlug}/settings`);
+  return {};
+}
+
+/**
+ * Termina el modo medición antes de las 24 h.
+ *
+ * El período existe para conocer el tráfico normal antes de alertar (§5), pero
+ * es una recomendación, no una condena: quien instala sabe si su cliente puede
+ * esperar un día. Sin este botón, un ámbar de 24 horas se lee como avería y
+ * nadie puede hacer nada al respecto.
+ */
+export async function startWatching(
+  _previous: EnrolmentState,
+  formData: FormData,
+): Promise<EnrolmentState> {
+  const tenantSlug = String(formData.get("tenant") ?? "");
+  const collectorId = String(formData.get("collector") ?? "");
+  if (!tenantSlug || !collectorId) return { error: "Falta el colector." };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("collectors")
+    .update({ status: "active" })
+    .eq("id", collectorId)
+    .eq("status", "measuring");
+
+  if (error) return { error: "No pudimos cambiar el estado del colector." };
+
+  revalidatePath(`/${tenantSlug}/settings`);
+  revalidatePath(`/${tenantSlug}/dashboard`);
   return {};
 }

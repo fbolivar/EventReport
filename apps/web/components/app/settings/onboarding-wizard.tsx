@@ -23,7 +23,11 @@ export function OnboardingWizard({
   basePath: string;
 }) {
   const instructions = BRAND_INSTRUCTIONS[current];
-  const withIp = (text: string) => text.replaceAll("{ip}", collectorIp);
+  // Sin colector instalado no hay IP que poner. Inventar una —o dejar la del
+  // ejemplo— manda al técnico a apuntar el firewall a una dirección que no
+  // existe, y después nadie entiende por qué no llega nada.
+  const target = collectorIp || "<IP-DEL-COLECTOR>";
+  const withIp = (text: string) => text.replaceAll("{ip}", target);
 
   return (
     <div>
@@ -59,7 +63,7 @@ export function OnboardingWizard({
             <dd className="text-small">{instructions.format}</dd>
             <dt className="text-micro text-ink-soft">Destino</dt>
             <dd>
-              <Value className="text-small">{collectorIp}:514</Value>
+              <Value className="text-small">{target}:514</Value>
             </dd>
           </dl>
 

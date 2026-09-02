@@ -52,3 +52,36 @@ export async function createClient() {
   const { data } = await client.from("tenants").select("id").eq("slug", slug).maybeSingle();
   return data?.id ? tenantScoped(client, data.id) : client;
 }
+
+/**
+ * Cliente sin acotar a una empresa, con RLS igual de vigente.
+ *
+ * Lo necesita lo poco que es legítimamente de varias empresas a la vez: la
+ * cartera del proveedor y saber si hay más de una. Se llama distinto a
+ * propósito, para que aparezca en una búsqueda: usarlo dentro del portal de un
+ * cliente es exactamente el error que el acotado evita.
+ */
+export async function createUnscopedClient() {
+  const cookieStore = await cookies();
+
+  return createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          try {
+            for (const { name, value, options } of cookiesToSet) {
+              cookieStore.set(name, value, options);
+            }
+          } catch {
+            // Componente de servidor: la sesión la refresca el middleware.
+          }
+        },
+      },
+    },
+  );
+}

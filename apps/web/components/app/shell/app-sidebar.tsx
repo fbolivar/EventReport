@@ -46,11 +46,14 @@ export function AppSidebar({
   tenantName,
   plan,
   collectors,
+  showClients,
 }: {
   tenantId: string;
   tenantName: string;
   plan: PlanCode;
   collectors: SidebarCollector[];
+  /** Quien administra más de una empresa necesita volver a su cartera. */
+  showClients?: boolean;
 }) {
   const active = useSelectedLayoutSegment();
 
@@ -86,6 +89,22 @@ export function AppSidebar({
               );
             })}
           </ul>
+
+          {showClients ? (
+            // La vista de clientes existía y no estaba en el menú: había que
+            // escribir la dirección a mano. Un proveedor entra y sale de sus
+            // empresas todo el día.
+            <ul className="mt-1 border-t border-ink-line pt-1 lg:space-y-0.5">
+              <li>
+                <Link
+                  href="/mssp"
+                  className="block rounded-control px-3 py-2 text-small whitespace-nowrap text-on-ink-soft transition-colors duration-[var(--er-duration-fast)] hover:bg-ink-raised hover:text-on-ink"
+                >
+                  Todos los clientes
+                </Link>
+              </li>
+            </ul>
+          ) : null}
         </nav>
 
         <div className="mt-auto hidden border-t border-ink-line pt-4 lg:block">

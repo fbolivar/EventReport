@@ -51,6 +51,10 @@ export interface Collector {
   siteId: string;
   name: string;
   health: CollectorHealth;
+  /** Cuándo se enroló: el modo medición dura 24 h desde aquí (§5). */
+  createdAt?: Timestamp;
+  /** IP de la máquina del colector, la que el firewall usa para el syslog. */
+  address?: string;
 }
 
 export interface Firewall {

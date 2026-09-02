@@ -26,6 +26,69 @@ type Adapter struct {
 
 func (a *Adapter) Brand() string { return "fortigate" }
 
+// adminRules son las reglas que no se pueden juzgar sin ver las cuentas de
+// administrador: MFA, hosts de confianza y número de superadministradores.
+var adminRules = []string{"FW-002", "FW-003", "FW-004"}
+
+// unreadable marca qué secciones de la configuración no se pudieron leer.
+type unreadable struct {
+	nat      bool
+	certs    bool
+	licenses bool
+	ipsec    bool
+	vdoms    bool
+}
+
+// Reglas que no se pueden juzgar sin cada sección. Una lista vacía porque el
+// firewall no contestó es indistinguible de una lista vacía porque no hay nada,
+// y solo una de las dos permite decir "cumple".
+var (
+	natRules     = []string{"FW-010"}
+	certRules    = []string{"FW-013"}
+	licenseRules = []string{"FW-016"}
+	ipsecRules   = []string{"FW-012"}
+	// Reglas que solo valen si se recorrió el equipo entero: si no se pudieron
+	// enumerar los dominios virtuales, pudo quedar medio firewall sin revisar.
+	vdomRules = []string{"FW-006", "FW-007", "FW-010"}
+)
+
+// capabilitiesFor declara qué se pudo mirar de verdad en este firewall.
+//
+// Cuando una sección no se puede leer —el usuario de API no llega, o el equipo
+// no responde ese endpoint—, sus reglas salen como "no evaluable" y el informe
+// lo dice, en vez de dar por bueno lo que nadie miró.
+func (a *Adapter) capabilitiesFor(adminsOcultos bool, sinLeer unreadable) normalize.Capabilities {
+	capabilities := a.Capabilities()
+
+	if adminsOcultos {
+		capabilities.AdminMFA = false
+		capabilities.UnevaluableRules = append(capabilities.UnevaluableRules, adminRules...)
+	}
+	if sinLeer.nat {
+		capabilities.UnevaluableRules = append(capabilities.UnevaluableRules, natRules...)
+	}
+	if sinLeer.certs {
+		capabilities.Certificates = false
+		capabilities.UnevaluableRules = append(capabilities.UnevaluableRules, certRules...)
+	}
+	if sinLeer.licenses {
+		capabilities.Licenses = false
+		capabilities.UnevaluableRules = append(capabilities.UnevaluableRules, licenseRules...)
+	}
+	if sinLeer.ipsec {
+		capabilities.VPNRemote = false
+		capabilities.UnevaluableRules = append(capabilities.UnevaluableRules, ipsecRules...)
+	}
+	// Si no se pudieron enumerar los dominios virtuales, lo que se revisó pudo
+	// ser una parte del equipo. Las reglas que dependen de recorrerlo entero no
+	// se pueden afirmar.
+	if sinLeer.vdoms {
+		capabilities.UnevaluableRules = append(capabilities.UnevaluableRules, vdomRules...)
+	}
+
+	return capabilities
+}
+
 // Capabilities: FortiGate answers all 20 rules (section 15.4).
 func (a *Adapter) Capabilities() normalize.Capabilities {
 	return normalize.Capabilities{
@@ -119,11 +182,34 @@ func eventType(fields map[string]string) normalize.EventType {
 		case "user":
 			return normalize.EventVPN
 		case "system":
+			// FortiGate mete en "system" tanto un reinicio como el ingreso de
+			// un administrador. Para el producto no es lo mismo: quién entra a
+			// configurar el firewall es de las pocas cosas que interrumpen a
+			// una persona (§6.4), y por eso se separa aquí.
+			if isAdminActivity(fields) {
+				return normalize.EventAdmin
+			}
 			return normalize.EventSystem
 		}
 		return normalize.EventSystem
 	}
 	return normalize.EventSystem
+}
+
+// isAdminActivity reconoce la actividad administrativa dentro de los eventos
+// de sistema: ingreso a la consola y cambios de configuración.
+func isAdminActivity(fields map[string]string) bool {
+	description := strings.ToLower(fields["logdesc"])
+	switch {
+	case strings.Contains(description, "admin login"),
+		strings.Contains(description, "admin logout"),
+		strings.Contains(description, "configuration changed"),
+		strings.Contains(description, "object attribute configured"):
+		return true
+	}
+	// Algunas versiones no traen logdesc; el par (usuario, interfaz de
+	// administración) es la otra señal fiable.
+	return fields["user"] != "" && fields["ui"] != ""
 }
 
 // action reads `action` and, for UTM lines, `utmaction`, which is what
@@ -216,6 +302,9 @@ func (a *Adapter) ParseLog(line []byte) (*normalize.Event, bool) {
 		Proto:      fields["proto"],
 		PolicyID:   fields["policyid"],
 		User:       fields["user"],
+		SrcName:    fields["srcname"],
+		SrcMAC:     fields["srcmac"],
+		OSName:     fields["osname"],
 		App:        fields["app"],
 		Category:   fields["catdesc"],
 		ThreatName: fields["attack"],
@@ -231,8 +320,10 @@ func (a *Adapter) ParseLog(line []byte) (*normalize.Event, bool) {
 	if event.Category == "" {
 		event.Category = fields["cat"]
 	}
+	// `srcname` ya no se copia a `User`: era hacer pasar el nombre de un equipo
+	// por una persona autenticada, y en un informe eso es una afirmación falsa.
 	if event.User == "" {
-		event.User = fields["srcname"]
+		event.User = fields["unauthuser"]
 	}
 
 	return event, true

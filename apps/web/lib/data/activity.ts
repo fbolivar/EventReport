@@ -77,3 +77,89 @@ export const topN = cache(
       .map((entry) => (entry.bytes ? entry : { key: entry.key, count: entry.count }));
   },
 );
+
+/**
+ * Actividad atribuida a cada persona, equipo o dirección.
+ *
+ * El colector baja por una escalera —usuario autenticado, nombre del equipo,
+ * huella, dirección— y guarda en cuál se quedó. Aquí se conserva ese dato: la
+ * pantalla dice "usuario" solo cuando alguien inició sesión de verdad. Sobre el
+ * tráfico real de una PYME, el usuario aparece en una de cada diez líneas, así
+ * que sin la escalera esta pantalla estaría casi siempre vacía.
+ */
+export type IdentityKind = "user" | "host" | "fingerprint" | "address";
+
+export interface IdentityActivity {
+  key: string;
+  kind: IdentityKind;
+  label: string;
+  sessions: number;
+  allowed: number;
+  denied: number;
+  bytes: number;
+  top: TopEntry[];
+}
+
+export const identityActivity = cache(
+  async (days = 30, limit = 25): Promise<IdentityActivity[]> => {
+    const supabase = await createClient();
+    const since = new Date(Date.now() - days * 86_400_000).toISOString();
+
+    const { data } = await supabase
+      .from("rollups_identity_hourly")
+      .select("identity_key, kind, label, sessions, allowed, denied, bytes_in, bytes_out")
+      .gte("hour", since);
+
+    const totals = new Map<string, IdentityActivity>();
+    for (const row of data ?? []) {
+      const current = totals.get(row.identity_key) ?? {
+        key: row.identity_key,
+        kind: row.kind as IdentityKind,
+        label: row.label,
+        sessions: 0,
+        allowed: 0,
+        denied: 0,
+        bytes: 0,
+        top: [],
+      };
+      current.sessions += row.sessions;
+      current.allowed += row.allowed;
+      current.denied += row.denied;
+      current.bytes += row.bytes_in + row.bytes_out;
+      totals.set(row.identity_key, current);
+    }
+
+    const ranked = [...totals.values()].sort((a, b) => b.bytes - a.bytes).slice(0, limit);
+    if (ranked.length === 0) return ranked;
+
+    // El detalle solo de las que se van a mostrar: pedir el de todas sería
+    // traer una tabla entera para pintar veinticinco filas.
+    const { data: detail } = await supabase
+      .from("rollups_identity_topn")
+      .select("identity_key, dimension, key, count, bytes")
+      .gte("hour", since)
+      .in(
+        "identity_key",
+        ranked.map((identity) => identity.key),
+      );
+
+    const byIdentity = new Map<string, Map<string, TopEntry>>();
+    for (const row of detail ?? []) {
+      if (row.dimension !== "app") continue;
+      const apps = byIdentity.get(row.identity_key) ?? new Map<string, TopEntry>();
+      const current = apps.get(row.key) ?? { key: row.key, count: 0, bytes: 0 };
+      current.count += row.count;
+      current.bytes = (current.bytes ?? 0) + row.bytes;
+      apps.set(row.key, current);
+      byIdentity.set(row.identity_key, apps);
+    }
+
+    for (const identity of ranked) {
+      identity.top = [...(byIdentity.get(identity.key)?.values() ?? [])]
+        .sort((a, b) => (b.bytes ?? 0) - (a.bytes ?? 0))
+        .slice(0, 3);
+    }
+
+    return ranked;
+  },
+);

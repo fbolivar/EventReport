@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -83,7 +84,17 @@ func (a *Adapter) TestConnection(ctx context.Context) error {
 
 // Wire shapes of the endpoints this adapter reads. Only the fields the rules
 // need are modelled; the rest of the response is ignored on purpose.
+// systemStatus refleja la respuesta real de `monitor/system/status`.
+//
+// FortiOS devuelve la **serie y la versión en la raíz** de la respuesta, no
+// dentro de `results`. Un FortiGate 40F de verdad se registró sin serie ni
+// firmware por leerlos en el sitio equivocado, y las pruebas no lo vieron
+// porque el simulador los ponía donde el código los esperaba. Se leen de los
+// dos lugares: distintas versiones y modelos difieren.
 type systemStatus struct {
+	Serial  string `json:"serial"`
+	Version string `json:"version"`
+	Build   int    `json:"build"`
 	Results struct {
 		Hostname string `json:"hostname"`
 		Serial   string `json:"serial"`
@@ -92,6 +103,21 @@ type systemStatus struct {
 		Uptime   int64  `json:"uptime"`
 		HAMode   string `json:"ha_mode"`
 	} `json:"results"`
+}
+
+// serial y firmware prefieren la raíz y caen a `results` si no está.
+func (s systemStatus) serial() string {
+	if s.Serial != "" {
+		return s.Serial
+	}
+	return s.Results.Serial
+}
+
+func (s systemStatus) firmware() string {
+	if s.Version != "" {
+		return s.Version
+	}
+	return s.Results.Version
 }
 
 type adminAccount struct {
@@ -141,9 +167,15 @@ type firewallPolicy struct {
 
 func yes(value string) bool { return value == "enable" }
 
+// splitList devuelve **siempre** una lista, nunca nil.
+//
+// En Go una lista nil se serializa como `null`, y del otro lado el motor de
+// reglas hacía `.length` sobre eso: la evaluación entera reventaba porque un
+// administrador no tenía hosts de confianza. Una lista vacía y la ausencia de
+// lista significan lo mismo aquí, así que solo debe viajar una de las dos.
 func splitList(value string) []string {
 	if value == "" {
-		return nil
+		return []string{}
 	}
 	parts := strings.Fields(value)
 	out := make([]string, 0, len(parts))
@@ -155,6 +187,7 @@ func splitList(value string) []string {
 	return out
 }
 
+// names devuelve siempre una lista: ver el comentario de splitList.
 func names(list []struct {
 	Name string `json:"name"`
 }) []string {
@@ -188,36 +221,138 @@ func (a *Adapter) FetchConfig(ctx context.Context) (*normalize.Config, error) {
 		return nil, err
 	}
 
+	// El firewall puede responder 200 y no enseñar nada.
+	//
+	// Un usuario de API de solo lectura sin permiso sobre "System >
+	// Administrators" recibe `results: []` con `size: 2`: el equipo dice que
+	// tiene dos cuentas y no deja verlas. Guardarlo como "no hay
+	// administradores" convierte tres controles de acceso en un aprobado
+	// silencioso, que en un informe de cumplimiento es peor que no decir nada.
 	var admins struct {
 		Results []adminAccount `json:"results"`
+		Size    int            `json:"size"`
 	}
 	if err := a.get(ctx, "cmdb/system/admin", &admins); err != nil {
 		return nil, err
 	}
+	adminsOcultos := len(admins.Results) == 0 && admins.Size > 0
+
+	// Los dominios virtuales del equipo. En uno sin VDOM la lista es `root` y
+	// todo funciona como siempre; en uno partido, cada dominio trae sus propias
+	// políticas e interfaces y hay que recorrerlos todos.
+	vdoms, vdomsFiables := a.fetchVDOMs(ctx)
+	varios := len(vdoms) > 1
 
 	var interfaces struct {
 		Results []systemInterface `json:"results"`
 	}
-	if err := a.get(ctx, "cmdb/system/interface", &interfaces); err != nil {
-		return nil, err
-	}
-
 	var policies struct {
 		Results []firewallPolicy `json:"results"`
 	}
-	if err := a.get(ctx, "cmdb/firewall/policy", &policies); err != nil {
-		return nil, err
+	type ámbito struct {
+		vdom       string
+		interfaces []systemInterface
+		policies   []firewallPolicy
+	}
+	ámbitos := make([]ámbito, 0, len(vdoms))
+
+	for _, vdom := range vdoms {
+		var porDominio ámbito
+		porDominio.vdom = vdom
+
+		var vdomInterfaces struct {
+			Results []systemInterface `json:"results"`
+		}
+		if err := a.scopedGet(ctx, vdom, "cmdb/system/interface", &vdomInterfaces); err != nil {
+			return nil, err
+		}
+		porDominio.interfaces = vdomInterfaces.Results
+
+		var vdomPolicies struct {
+			Results []firewallPolicy `json:"results"`
+		}
+		if err := a.scopedGet(ctx, vdom, "cmdb/firewall/policy", &vdomPolicies); err != nil {
+			return nil, err
+		}
+		porDominio.policies = vdomPolicies.Results
+
+		ámbitos = append(ámbitos, porDominio)
+		interfaces.Results = append(interfaces.Results, vdomInterfaces.Results...)
+		policies.Results = append(policies.Results, vdomPolicies.Results...)
 	}
 
+	// A dónde envía sus registros este firewall.
+	//
+	// Sin esto el producto no podía distinguir "el firewall no tiene syslog
+	// configurado" de "los paquetes no llegan al colector", que son dos
+	// problemas con soluciones opuestas. Además es un control de cumplimiento
+	// por derecho propio: un firewall que no registra nada no cumple ISO 27001
+	// A.8.15 ni PCI DSS 10.
+	// Global: no cambia entre dominios.
+	dns, ntp := a.fetchServices(ctx)
+
+	// Por dominio: cada uno tiene su syslog, sus publicaciones y sus túneles.
+	syslogTargets := []string{}
+	tunnels := []normalize.IPsecTunnel{}
+	nat := []normalize.NATRule{}
+	ipsecOK, natOK := true, true
+	var remote *normalize.RemoteVPN
+
+	for _, vdom := range vdoms {
+		syslogTargets = append(syslogTargets, a.fetchSyslogTargets(ctx, vdom)...)
+
+		porDominio, ok := a.fetchIPsec(ctx, vdom)
+		ipsecOK = ipsecOK && ok
+		for _, tunnel := range porDominio {
+			tunnel.Name = etiqueta(vdom, varios, tunnel.Name)
+			tunnels = append(tunnels, tunnel)
+		}
+
+		publicaciones, ok := a.fetchNAT(ctx, vdom)
+		natOK = natOK && ok
+		for _, rule := range publicaciones {
+			rule.ID = etiqueta(vdom, varios, rule.ID)
+			nat = append(nat, rule)
+		}
+
+		if remote == nil {
+			remote = a.fetchRemoteVPN(ctx, vdom)
+		}
+	}
+	certs, certsOK := a.fetchCertificates(ctx)
+	licenses, licensesOK := a.fetchLicenses(ctx)
+
+	// Las listas arrancan vacías, no nil: en Go una lista nil se serializa como
+	// `null` y el otro lado espera un arreglo. Un firewall sin túneles VPN debe
+	// enviar `[]`, no `null`.
 	config := &normalize.Config{
 		SchemaVersion: normalize.SchemaVersion,
 		CollectedAt:   time.Now().UTC().Format(time.RFC3339),
-		Capabilities:  a.Capabilities(),
+		Capabilities: a.capabilitiesFor(adminsOcultos, unreadable{
+			nat:      !natOK,
+			certs:    !certsOK,
+			licenses: !licensesOK,
+			ipsec:    !ipsecOK,
+			vdoms:    !vdomsFiables,
+		}),
+		Admins:     []normalize.Admin{},
+		NAT:        nat,
+		Certs:      certs,
+		Licenses:   licenses,
+		MgmtAccess: []normalize.ManagementAccess{},
+		Interfaces: []normalize.Interface{},
+		Policies:   []normalize.Policy{},
+		VPN:        normalize.VPN{IPsec: tunnels, Remote: remote},
+		Services: normalize.Services{
+			NTP:           ntp,
+			DNS:           dns,
+			SyslogTargets: syslogTargets,
+		},
 		Device: normalize.Device{
 			Brand:         a.Brand(),
 			Model:         status.Results.Model,
-			Serial:        status.Results.Serial,
-			Firmware:      status.Results.Version,
+			Serial:        status.serial(),
+			Firmware:      status.firmware(),
 			Hostname:      status.Results.Hostname,
 			HAMode:        haMode(status.Results.HAMode),
 			UptimeSeconds: status.Results.Uptime,
@@ -240,45 +375,50 @@ func (a *Adapter) FetchConfig(ctx context.Context) (*normalize.Config, error) {
 		})
 	}
 
-	for _, iface := range interfaces.Results {
-		role := interfaceRole(iface.Role, iface.Name)
-		protocols := splitList(strings.ReplaceAll(iface.AllowAccess, ",", " "))
+	for _, dominio := range ámbitos {
+		for _, iface := range dominio.interfaces {
+			role := interfaceRole(iface.Role, iface.Name)
+			protocols := splitList(strings.ReplaceAll(iface.AllowAccess, ",", " "))
+			nombre := etiqueta(dominio.vdom, varios, iface.Name)
 
-		config.Interfaces = append(config.Interfaces, normalize.Interface{
-			Name: iface.Name,
-			Zone: role,
-			Role: role,
-			IP:   firstField(iface.IP),
-			VLAN: iface.VLANID,
-		})
-		config.MgmtAccess = append(config.MgmtAccess, normalize.ManagementAccess{
-			InterfaceName: iface.Name,
-			IsWAN:         role == "wan",
-			Protocols:     protocols,
-		})
+			config.Interfaces = append(config.Interfaces, normalize.Interface{
+				Name: nombre,
+				Zone: role,
+				Role: role,
+				IP:   firstField(iface.IP),
+				VLAN: iface.VLANID,
+			})
+			config.MgmtAccess = append(config.MgmtAccess, normalize.ManagementAccess{
+				InterfaceName: nombre,
+				IsWAN:         role == "wan",
+				Protocols:     protocols,
+			})
+		}
 	}
 
-	for position, policy := range policies.Results {
-		config.Policies = append(config.Policies, normalize.Policy{
-			ID:       fmt.Sprintf("%d", policy.PolicyID),
-			Name:     policy.Name,
-			Position: position + 1,
-			Enabled:  yes(policy.Status),
-			SrcZones: names(policy.SrcIntf),
-			DstZones: names(policy.DstIntf),
-			Src:      names(policy.SrcAddr),
-			Dst:      names(policy.DstAddr),
-			Services: names(policy.Service),
-			Action:   policyAction(policy.Action),
-			Log:      logMode(policy.Logtraf),
-			Profiles: normalize.SecurityProfiles{
-				IPS:        policy.IPSSensor != "",
-				AV:         policy.AVProfile != "",
-				Web:        policy.WebFilter != "",
-				AppCtl:     policy.AppList != "",
-				SSLInspect: policy.SSLSSHProfil != "" && policy.SSLSSHProfil != "no-inspection",
-			},
-		})
+	for _, dominio := range ámbitos {
+		for position, policy := range dominio.policies {
+			config.Policies = append(config.Policies, normalize.Policy{
+				ID:       etiqueta(dominio.vdom, varios, fmt.Sprintf("%d", policy.PolicyID)),
+				Name:     policy.Name,
+				Position: position + 1,
+				Enabled:  yes(policy.Status),
+				SrcZones: names(policy.SrcIntf),
+				DstZones: names(policy.DstIntf),
+				Src:      names(policy.SrcAddr),
+				Dst:      names(policy.DstAddr),
+				Services: names(policy.Service),
+				Action:   policyAction(policy.Action),
+				Log:      logMode(policy.Logtraf),
+				Profiles: normalize.SecurityProfiles{
+					IPS:        policy.IPSSensor != "",
+					AV:         policy.AVProfile != "",
+					Web:        policy.WebFilter != "",
+					AppCtl:     policy.AppList != "",
+					SSLInspect: policy.SSLSSHProfil != "" && policy.SSLSSHProfil != "no-inspection",
+				},
+			})
+		}
 	}
 
 	config.SHA256 = fingerprint(config)
@@ -347,4 +487,59 @@ func firstField(value string) string {
 		return ""
 	}
 	return fields[0]
+}
+
+// syslogdSetting es lo que devuelve `cmdb/log.syslogd/setting`.
+type syslogdSetting struct {
+	Results struct {
+		Status string `json:"status"`
+		Server string `json:"server"`
+		Port   any    `json:"port"`
+	} `json:"results"`
+}
+
+// fetchSyslogTargets lee los hasta cuatro destinos de syslog del FortiGate.
+//
+// Devuelve una lista vacía y no un error si no se pueden leer: un firewall sin
+// syslog configurado es un hallazgo, no un fallo de recolección, y perder el
+// snapshot entero por esto sería peor que no saberlo.
+func (a *Adapter) fetchSyslogTargets(ctx context.Context, vdom string) []string {
+	targets := []string{}
+
+	// FortiOS numera el segundo y siguientes: log.syslogd2, log.syslogd3...
+	for _, path := range []string{
+		"cmdb/log.syslogd/setting",
+		"cmdb/log.syslogd2/setting",
+		"cmdb/log.syslogd3/setting",
+		"cmdb/log.syslogd4/setting",
+	} {
+		var setting syslogdSetting
+		if err := a.scopedGet(ctx, vdom, path, &setting); err != nil {
+			continue
+		}
+		if !strings.EqualFold(setting.Results.Status, "enable") || setting.Results.Server == "" {
+			continue
+		}
+
+		target := setting.Results.Server
+		if port := puerto(setting.Results.Port); port != "" && port != "514" {
+			target += ":" + port
+		}
+		targets = append(targets, target)
+	}
+
+	return targets
+}
+
+// puerto normaliza el campo, que FortiOS devuelve unas veces como número y
+// otras como texto.
+func puerto(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case float64:
+		return strconv.Itoa(int(v))
+	default:
+		return ""
+	}
 }

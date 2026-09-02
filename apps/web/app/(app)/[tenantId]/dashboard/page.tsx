@@ -121,6 +121,7 @@ export default async function DashboardPage({
                   key={collector.id}
                   name={`${firewall?.hostname ?? collector.name} · ${cityOf(collector.siteId)}`}
                   health={collector.health}
+                  measuringSince={collector.createdAt}
                 />
               );
             })}

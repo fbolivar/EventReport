@@ -46,11 +46,24 @@ Deno.serve(
     // La serie identifica al equipo: si ya está registrado, esto es una
     // actualización de firmware o de nombre, no un equipo nuevo, y no consume
     // cupo. Sin esta comprobación, reinstalar el colector duplicaría firewalls.
+    //
+    // Un equipo real llegó **sin serie** —el adaptador la leía en el sitio
+    // equivocado—, y una serie vacía como identidad es peor que ninguna: dos
+    // equipos distintos se pisarían entre sí. Sin serie, la identidad es el
+    // nombre del equipo dentro de esta empresa.
+    const identity = body.serial
+      ? { column: "serial", value: body.serial }
+      : { column: "hostname", value: body.hostname };
+
+    if (!identity.value) {
+      return json({ error: "the device reported neither serial nor hostname" }, 400);
+    }
+
     const { data: existing } = await context.admin
       .from("firewalls")
       .select("id")
       .eq("tenant_id", context.tenantId)
-      .eq("serial", body.serial)
+      .eq(identity.column, identity.value)
       .maybeSingle();
 
     if (!existing) {

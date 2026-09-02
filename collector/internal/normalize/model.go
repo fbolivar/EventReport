@@ -47,12 +47,24 @@ type Event struct {
 	Proto      string      `json:"proto,omitempty"`
 	PolicyID   string      `json:"policyId,omitempty"`
 	User       string      `json:"user,omitempty"`
-	App        string      `json:"app,omitempty"`
-	Category   string      `json:"category,omitempty"`
-	ThreatName string      `json:"threatName,omitempty"`
-	Severity   string      `json:"severity,omitempty"`
-	BytesIn    int64       `json:"bytesIn,omitempty"`
-	BytesOut   int64       `json:"bytesOut,omitempty"`
+
+	// Quién estaba detrás de la sesión cuando nadie inició sesión.
+	//
+	// En una PYME sin directorio activo, once de cada cien líneas traen `user`:
+	// medido sobre el tráfico real de un FortiGate 40F. El resto solo se puede
+	// atribuir por el nombre del equipo, su huella o su dirección. Van
+	// separados y no mezclados en `User` para que el portal pueda decir de cuál
+	// de los cuatro está hablando en vez de fingir que todo es un usuario.
+	SrcName string `json:"srcName,omitempty"`
+	SrcMAC  string `json:"srcMac,omitempty"`
+	OSName  string `json:"osName,omitempty"`
+
+	App        string `json:"app,omitempty"`
+	Category   string `json:"category,omitempty"`
+	ThreatName string `json:"threatName,omitempty"`
+	Severity   string `json:"severity,omitempty"`
+	BytesIn    int64  `json:"bytesIn,omitempty"`
+	BytesOut   int64  `json:"bytesOut,omitempty"`
 
 	// DeviceID identifies which firewall sent the line when several share a
 	// collector (section 6.6).

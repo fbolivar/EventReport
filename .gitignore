@@ -40,3 +40,4 @@ coverage/
 
 # payload temporal del simulador de colector
 .tmp-config.json
+.env*

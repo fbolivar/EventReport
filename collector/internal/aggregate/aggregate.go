@@ -55,6 +55,8 @@ type Hour struct {
 	Hour     time.Time  `json:"hour"`
 	Counters []Counter  `json:"counters"`
 	TopN     []TopEntry `json:"topn"`
+	// Identities es la actividad atribuida a cada persona, equipo o dirección.
+	Identities []Identity `json:"identities"`
 	// Events the parser did not recognise. Reported as data quality, never
 	// silently dropped (section 6.2).
 	Unparsed int64 `json:"unparsed"`
@@ -73,9 +75,10 @@ type topKey struct {
 }
 
 type bucket struct {
-	counters map[counterKey]*Counter
-	top      map[topKey]*TopEntry
-	unparsed int64
+	counters   map[counterKey]*Counter
+	top        map[topKey]*TopEntry
+	identities map[string]*identityBucket
+	unparsed   int64
 	// maxSkew is the largest gap seen between the device's own timestamp and
 	// the moment the line arrived. Past 60 s it opens FW-015.
 	maxSkew time.Duration
@@ -102,8 +105,9 @@ func (a *Aggregator) bucketFor(deviceID string, hour time.Time) *bucket {
 	current, ok := hours[hour]
 	if !ok {
 		current = &bucket{
-			counters: make(map[counterKey]*Counter),
-			top:      make(map[topKey]*TopEntry),
+			counters:   make(map[counterKey]*Counter),
+			top:        make(map[topKey]*TopEntry),
+			identities: make(map[string]*identityBucket),
 		}
 		hours[hour] = current
 	}
@@ -177,6 +181,10 @@ func (a *Aggregator) Add(event *normalize.Event, received time.Time) {
 	if event.Type == normalize.EventVPN {
 		add(DimVPNUser, event.User)
 	}
+
+	// Y a quién se le atribuye, que es lo que convierte un contador en algo
+	// sobre lo que alguien puede actuar.
+	current.identity(event)
 }
 
 // AddUnparsed counts a line the adapter did not recognise.
@@ -193,6 +201,33 @@ func (a *Aggregator) AddUnparsed(deviceID string, when time.Time) {
 // Called at minute 05 for the previous hour (section 6.6). Late events land in
 // an hour that was already closed and produce a corrective rollup; the cloud
 // upserts by (firewall, hour, type, action), so the correction overwrites.
+// Open devuelve una copia de las horas todavía abiertas, **sin cerrarlas**.
+//
+// Sirve para que la actividad se vea sin esperar a que termine la hora. La
+// escritura en la nube es idempotente por (firewall, hora, tipo, acción), así
+// que enviar la hora a medias y volver a enviarla completa después sobrescribe
+// en vez de duplicar: eso es lo que hace seguro este adelanto.
+func (a *Aggregator) Open() []Hour {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	var open []Hour
+	for deviceID, hours := range a.buckets {
+		for hour, current := range hours {
+			open = append(open, Hour{
+				DeviceID:         deviceID,
+				Hour:             hour,
+				Counters:         sortedCounters(current),
+				TopN:             cappedTop(current),
+				Identities:       identitiesOf(current),
+				Unparsed:         current.unparsed,
+				ClockSkewSeconds: int(current.maxSkew.Seconds()),
+			})
+		}
+	}
+	return open
+}
+
 func (a *Aggregator) CloseBefore(cutoff time.Time) []Hour {
 	cutoff = cutoff.UTC().Truncate(time.Hour)
 
@@ -212,6 +247,7 @@ func (a *Aggregator) CloseBefore(cutoff time.Time) []Hour {
 				Hour:             hour,
 				Counters:         sortedCounters(current),
 				TopN:             cappedTop(current),
+				Identities:       identitiesOf(current),
 				Unparsed:         current.unparsed,
 				ClockSkewSeconds: int(current.maxSkew.Seconds()),
 			})

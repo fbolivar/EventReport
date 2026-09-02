@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { ActivityChart, HourProfileChart } from "@/components/app/activity/activity-chart";
+import { IdentityTable } from "@/components/app/activity/identity-table";
 import { TopList } from "@/components/app/activity/top-list";
 import { FilterLinks } from "@/components/app/shell/filter-links";
 import { PageHeader } from "@/components/app/shell/page-header";
@@ -9,7 +10,7 @@ import { Surface, SurfaceBody, SurfaceHeader } from "@/components/shared/surface
 import { Value } from "@/components/shared/value";
 import { TOPN_DIMENSION_LABELS } from "@/content/labels";
 import { hourOfDayAverage, toDaily } from "@/lib/fixtures/activity";
-import { activitySeries, topN } from "@/lib/data/activity";
+import { activitySeries, identityActivity, topN } from "@/lib/data/activity";
 import { formatBytes, formatNumber } from "@/lib/utils/format";
 
 export const metadata: Metadata = { title: "Actividad" };
@@ -31,14 +32,16 @@ export default async function ActivityPage({
   const { range } = await searchParams;
   const days = Number(range) || 30;
 
-  const [hourly, apps, countries, categories, deniedIps, vpnUsers] = await Promise.all([
-    activitySeries(days),
-    topN("app", days),
-    topN("src_country", days),
-    topN("web_category", days),
-    topN("src_ip_denied", days),
-    topN("vpn_user", days),
-  ]);
+  const [hourly, apps, countries, categories, deniedIps, vpnUsers, identities] =
+    await Promise.all([
+      activitySeries(days),
+      topN("app", days),
+      topN("src_country", days),
+      topN("web_category", days),
+      topN("src_ip_denied", days),
+      topN("vpn_user", days),
+      identityActivity(days),
+    ]);
   const daily = toDaily(hourly);
   const hours = hourOfDayAverage(hourly);
 
@@ -85,6 +88,16 @@ export default async function ActivityPage({
         <Metric label="Bloqueos web" value={formatNumber(totals.blockedWeb)} />
         <Metric label="Tráfico" value={formatBytes(totals.bytes)} />
       </dl>
+
+      <Surface>
+        <SurfaceHeader
+          title="Quién usa la red"
+          meta="Cada fila dice cómo se atribuyó: con sesión iniciada, por el nombre del equipo, por su huella o por su dirección."
+        />
+        <SurfaceBody>
+          <IdentityTable identities={identities} />
+        </SurfaceBody>
+      </Surface>
 
       <Surface>
         <SurfaceHeader title="Sesiones por día" meta={`Últimos ${days} días`} />
