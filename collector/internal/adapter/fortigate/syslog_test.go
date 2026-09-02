@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -38,7 +39,7 @@ func TestLeeLosDestinosDeSyslog(t *testing.T) {
 		"log.syslogd3/setting": `{"results":{"status":"disable","server":"10.0.0.99","port":514}}`,
 	}}
 
-	targets := adapter.fetchSyslogTargets(context.Background())
+	targets := adapter.fetchSyslogTargets(context.Background(), "")
 
 	esperado := []string{"10.212.134.202", "10.0.0.9:1514"}
 	if len(targets) != len(esperado) {
@@ -57,7 +58,7 @@ func TestLeeLosDestinosDeSyslog(t *testing.T) {
 func TestSinSyslogDevuelveListaVacia(t *testing.T) {
 	adapter := &Adapter{Host: "https://192.168.0.1", Token: "x", HTTP: respuestas{}}
 
-	targets := adapter.fetchSyslogTargets(context.Background())
+	targets := adapter.fetchSyslogTargets(context.Background(), "")
 	if targets == nil {
 		t.Fatal("devolvió nil; debe ser una lista vacía")
 	}
@@ -103,6 +104,7 @@ func firewallCompleto() respuestas {
 		"monitor/system/available-certificates": `{"results":[]}`,
 		"monitor/license/status":                `{"results":{}}`,
 		"cmdb/vpn.ipsec/phase1-interface":       `{"results":[]}`,
+		"cmdb/system/vdom":                      `{"results":[{"name":"root"}]}`,
 	}
 }
 
@@ -187,5 +189,91 @@ func TestFortiGuardCuentaComoFuenteDeHora(t *testing.T) {
 	}
 	if len(config.Services.NTP) != 1 || config.Services.NTP[0] != "fortiguard" {
 		t.Errorf("fuentes de hora = %v", config.Services.NTP)
+	}
+}
+
+// Un FortiGate partido en dominios virtuales: cada uno con sus políticas.
+//
+// Sin recorrerlos todos se auditaría el de administración y el resto quedaría
+// aprobado sin que nadie lo mirara —en un equipo de proveedor, un cliente
+// entero invisible—.
+func TestRecorreTodosLosDominiosVirtuales(t *testing.T) {
+	adapter := &Adapter{Host: "https://192.168.0.1", Token: "x", HTTP: porDominio{
+		base: firewallCompleto(),
+		vdoms: map[string]string{
+			"cliente-a": `{"results":[{"policyid":1,"name":"salida-a","status":"enable","action":"accept"}]}`,
+			"cliente-b": `{"results":[{"policyid":1,"name":"salida-b","status":"enable","action":"accept"}]}`,
+		},
+	}}
+
+	config, err := adapter.FetchConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(config.Policies) != 2 {
+		t.Fatalf("esperaba una política por dominio, obtuvo %d", len(config.Policies))
+	}
+
+	// Y con el dominio delante: dos políticas con id 1 no pueden compartir
+	// identificador, o el hallazgo de una pisa al de la otra.
+	ids := []string{config.Policies[0].ID, config.Policies[1].ID}
+	for _, esperado := range []string{"cliente-a/1", "cliente-b/1"} {
+		if !contiene(ids, esperado) {
+			t.Errorf("falta la política %q; hay %v", esperado, ids)
+		}
+	}
+}
+
+// Si no se pueden enumerar los dominios, lo revisado pudo ser una parte.
+func TestSinPoderEnumerarDominiosNoSeAfirmaElEquipoEntero(t *testing.T) {
+	sinVdoms := firewallCompleto()
+	delete(sinVdoms, "cmdb/system/vdom")
+
+	adapter := &Adapter{Host: "https://192.168.0.1", Token: "x", HTTP: sinVdoms}
+	config, err := adapter.FetchConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range []string{"FW-006", "FW-007", "FW-010"} {
+		if !contiene(config.Capabilities.UnevaluableRules, code) {
+			t.Errorf("%s debería quedar sin evaluar: no se sabe si se revisó el equipo entero", code)
+		}
+	}
+}
+
+// porDominio contesta políticas distintas según el vdom de la consulta.
+type porDominio struct {
+	base  respuestas
+	vdoms map[string]string
+}
+
+func (p porDominio) Do(request *http.Request) (*http.Response, error) {
+	query := request.URL.Query().Get("vdom")
+
+	if strings.Contains(request.URL.Path, "system/vdom") {
+		nombres := make([]string, 0, len(p.vdoms))
+		for name := range p.vdoms {
+			nombres = append(nombres, `{"name":"`+name+`"}`)
+		}
+		sort.Strings(nombres)
+		return respuesta(`{"results":[` + strings.Join(nombres, ",") + `]}`), nil
+	}
+
+	if strings.Contains(request.URL.Path, "firewall/policy") {
+		if cuerpo, ok := p.vdoms[query]; ok {
+			return respuesta(cuerpo), nil
+		}
+		return respuesta(`{"results":[]}`), nil
+	}
+
+	return p.base.Do(request)
+}
+
+func respuesta(cuerpo string) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(cuerpo)),
+		Header:     http.Header{},
 	}
 }

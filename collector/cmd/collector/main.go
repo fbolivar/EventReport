@@ -716,15 +716,9 @@ func runCollector(args []string, logger *slog.Logger) error {
 		return err
 	}
 
-	frase := *passphrase
-	if frase == "" {
-		// Instalado como servicio, no hay nadie para escribirla: se lee la que
-		// quedó sellada para esta máquina.
-		guardada, err := config.LoadMachineKey(*path)
-		if err != nil {
-			return err
-		}
-		frase = guardada
+	frase, err := frasePaso(*passphrase, *path)
+	if err != nil {
+		return err
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -1067,6 +1061,15 @@ func enqueueSnapshot(ctx context.Context, pending *buffer.Buffer, device pipelin
 }
 
 // runTest verifies the collector can reach each firewall's API.
+// frasePaso devuelve la frase escrita a mano o, si no hay, la que quedó
+// sellada para esta máquina cuando se instaló el colector.
+func frasePaso(escrita, path string) (string, error) {
+	if escrita != "" {
+		return escrita, nil
+	}
+	return config.LoadMachineKey(path)
+}
+
 func runTest(args []string, logger *slog.Logger) error {
 	set := flag.NewFlagSet("test", flag.ExitOnError)
 	path := configFlag(set)
@@ -1080,11 +1083,20 @@ func runTest(args []string, logger *slog.Logger) error {
 		return err
 	}
 
+	// La misma frase que usa el colector al arrancar: si el asistente la dejó
+	// sellada para esta máquina, `test` tampoco tiene que pedirla. Sin esto,
+	// probar un firewall ya configurado fallaba con un 401 que parecía un
+	// problema de credenciales del equipo.
+	frase, err := frasePaso(*passphrase, *path)
+	if err != nil {
+		return err
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
 	for _, device := range file.Devices {
-		built, err := buildAdapter(device, *passphrase)
+		built, err := buildAdapter(device, frase)
 		if err != nil {
 			return err
 		}
@@ -1093,6 +1105,38 @@ func runTest(args []string, logger *slog.Logger) error {
 			continue
 		}
 		logger.Info("conexión correcta", "firewall", device.FirewallID, "marca", device.Brand)
+
+		// Y qué alcanza a ver con esta credencial.
+		//
+		// "Conexión correcta" no dice nada sobre si el usuario de API puede leer
+		// las cuentas, los certificados o los otros dominios virtuales, que es
+		// justo lo que decide si el informe va a poder afirmar algo. El técnico
+		// lo ve aquí, antes de irse del cliente, y no dos días después en un
+		// informe con controles "no evaluables".
+		snapshot, err := built.FetchConfig(ctx)
+		if err != nil {
+			logger.Error("conecta, pero no se pudo leer la configuración", "error", err)
+			continue
+		}
+
+		logger.Info("lo que se alcanza a leer",
+			"equipo", snapshot.Device.Hostname,
+			"firmware", snapshot.Device.Firmware,
+			"interfaces", len(snapshot.Interfaces),
+			"políticas", len(snapshot.Policies),
+			"publicaciones_nat", len(snapshot.NAT),
+			"túneles", len(snapshot.VPN.IPsec),
+			"administradores", len(snapshot.Admins),
+			"certificados", len(snapshot.Certs),
+			"licencias", len(snapshot.Licenses),
+			"destinos_syslog", snapshot.Services.SyslogTargets,
+			"ntp", snapshot.Services.NTP)
+
+		if reglas := snapshot.Capabilities.UnevaluableRules; len(reglas) > 0 {
+			logger.Warn("con esta credencial hay controles que no se podrán afirmar",
+				"reglas", reglas,
+				"solución", "da permiso de lectura al usuario de API sobre las secciones que faltan")
+		}
 	}
 
 	return nil

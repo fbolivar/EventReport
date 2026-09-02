@@ -1355,3 +1355,32 @@ certificados sigue aportando sus políticas. Lo que no se pudo leer entra en `un
 **Regla:** en un producto de cumplimiento, la pregunta no es "¿qué reglas tengo?" sino "¿qué está
 mirando cada regla?". Una regla sobre datos que nadie recoge no es una comprobación: es un aprobado
 automático con nombre técnico.
+
+
+#### Un FortiGate partido en dominios virtuales
+
+De un 100F para arriba es normal partir el equipo en VDOM: una sede por dominio, o —si lo
+administra un proveedor— **un cliente por dominio**. Cada uno tiene sus propias políticas,
+interfaces, publicaciones y túneles, y la API devuelve por defecto los del dominio de
+administración. El adaptador no pedía el resto: se auditaba uno y los demás quedaban aprobados sin
+que nadie los mirara. En un equipo de MSSP, lo que faltaba no era un campo: era un cliente entero.
+
+Ahora se enumeran con `cmdb/system/vdom` y cada consulta por dominio se acota con `?vdom=`
+—verificado contra un FortiGate real, que con un solo dominio devuelve `root` y todo sigue igual—.
+Con más de uno, políticas, interfaces y túneles llevan el dominio delante: dos políticas con id 1 en
+clientes distintos no pueden compartir identificador, o el hallazgo de una pisa al de la otra.
+
+Y si el usuario de API no puede enumerarlos, FW-006, FW-007 y FW-010 salen **no evaluables**: pudo
+quedar medio firewall sin revisar y eso no se puede afirmar.
+
+**Regla:** el alcance de una revisión es parte del resultado. Decir "cumple" sobre lo que se miró,
+cuando no se sabe cuánto quedó fuera, es la misma mentira que aprobar una lista vacía.
+
+#### `collector test` decía "conexión correcta" y nada más
+
+Conectar no es poder leer. Con la misma credencial, un usuario de API sin permisos ve el equipo y
+no ve sus cuentas ni sus certificados, y eso decide qué podrá afirmar el informe. Ahora `test`
+enseña lo que alcanza —interfaces, políticas, NAT, túneles, licencias, destinos de syslog— y avisa
+de los controles que quedarán sin evaluar, **mientras el técnico todavía está en el cliente** y no
+dos días después. De paso usa la frase sellada de la máquina, como `run`: probar un firewall ya
+instalado fallaba con un 401 que parecía culpa del equipo.

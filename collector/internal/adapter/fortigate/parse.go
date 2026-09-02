@@ -36,6 +36,7 @@ type unreadable struct {
 	certs    bool
 	licenses bool
 	ipsec    bool
+	vdoms    bool
 }
 
 // Reglas que no se pueden juzgar sin cada sección. Una lista vacía porque el
@@ -46,6 +47,9 @@ var (
 	certRules    = []string{"FW-013"}
 	licenseRules = []string{"FW-016"}
 	ipsecRules   = []string{"FW-012"}
+	// Reglas que solo valen si se recorrió el equipo entero: si no se pudieron
+	// enumerar los dominios virtuales, pudo quedar medio firewall sin revisar.
+	vdomRules = []string{"FW-006", "FW-007", "FW-010"}
 )
 
 // capabilitiesFor declara qué se pudo mirar de verdad en este firewall.
@@ -74,6 +78,12 @@ func (a *Adapter) capabilitiesFor(adminsOcultos bool, sinLeer unreadable) normal
 	if sinLeer.ipsec {
 		capabilities.VPNRemote = false
 		capabilities.UnevaluableRules = append(capabilities.UnevaluableRules, ipsecRules...)
+	}
+	// Si no se pudieron enumerar los dominios virtuales, lo que se revisó pudo
+	// ser una parte del equipo. Las reglas que dependen de recorrerlo entero no
+	// se pueden afirmar.
+	if sinLeer.vdoms {
+		capabilities.UnevaluableRules = append(capabilities.UnevaluableRules, vdomRules...)
 	}
 
 	return capabilities

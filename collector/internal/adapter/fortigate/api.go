@@ -237,18 +237,48 @@ func (a *Adapter) FetchConfig(ctx context.Context) (*normalize.Config, error) {
 	}
 	adminsOcultos := len(admins.Results) == 0 && admins.Size > 0
 
+	// Los dominios virtuales del equipo. En uno sin VDOM la lista es `root` y
+	// todo funciona como siempre; en uno partido, cada dominio trae sus propias
+	// políticas e interfaces y hay que recorrerlos todos.
+	vdoms, vdomsFiables := a.fetchVDOMs(ctx)
+	varios := len(vdoms) > 1
+
 	var interfaces struct {
 		Results []systemInterface `json:"results"`
 	}
-	if err := a.get(ctx, "cmdb/system/interface", &interfaces); err != nil {
-		return nil, err
-	}
-
 	var policies struct {
 		Results []firewallPolicy `json:"results"`
 	}
-	if err := a.get(ctx, "cmdb/firewall/policy", &policies); err != nil {
-		return nil, err
+	type ámbito struct {
+		vdom       string
+		interfaces []systemInterface
+		policies   []firewallPolicy
+	}
+	ámbitos := make([]ámbito, 0, len(vdoms))
+
+	for _, vdom := range vdoms {
+		var porDominio ámbito
+		porDominio.vdom = vdom
+
+		var vdomInterfaces struct {
+			Results []systemInterface `json:"results"`
+		}
+		if err := a.scopedGet(ctx, vdom, "cmdb/system/interface", &vdomInterfaces); err != nil {
+			return nil, err
+		}
+		porDominio.interfaces = vdomInterfaces.Results
+
+		var vdomPolicies struct {
+			Results []firewallPolicy `json:"results"`
+		}
+		if err := a.scopedGet(ctx, vdom, "cmdb/firewall/policy", &vdomPolicies); err != nil {
+			return nil, err
+		}
+		porDominio.policies = vdomPolicies.Results
+
+		ámbitos = append(ámbitos, porDominio)
+		interfaces.Results = append(interfaces.Results, vdomInterfaces.Results...)
+		policies.Results = append(policies.Results, vdomPolicies.Results...)
 	}
 
 	// A dónde envía sus registros este firewall.
@@ -258,11 +288,37 @@ func (a *Adapter) FetchConfig(ctx context.Context) (*normalize.Config, error) {
 	// problemas con soluciones opuestas. Además es un control de cumplimiento
 	// por derecho propio: un firewall que no registra nada no cumple ISO 27001
 	// A.8.15 ni PCI DSS 10.
-	syslogTargets := a.fetchSyslogTargets(ctx)
+	// Global: no cambia entre dominios.
 	dns, ntp := a.fetchServices(ctx)
-	tunnels, ipsecOK := a.fetchIPsec(ctx)
-	remote := a.fetchRemoteVPN(ctx)
-	nat, natOK := a.fetchNAT(ctx)
+
+	// Por dominio: cada uno tiene su syslog, sus publicaciones y sus túneles.
+	syslogTargets := []string{}
+	tunnels := []normalize.IPsecTunnel{}
+	nat := []normalize.NATRule{}
+	ipsecOK, natOK := true, true
+	var remote *normalize.RemoteVPN
+
+	for _, vdom := range vdoms {
+		syslogTargets = append(syslogTargets, a.fetchSyslogTargets(ctx, vdom)...)
+
+		porDominio, ok := a.fetchIPsec(ctx, vdom)
+		ipsecOK = ipsecOK && ok
+		for _, tunnel := range porDominio {
+			tunnel.Name = etiqueta(vdom, varios, tunnel.Name)
+			tunnels = append(tunnels, tunnel)
+		}
+
+		publicaciones, ok := a.fetchNAT(ctx, vdom)
+		natOK = natOK && ok
+		for _, rule := range publicaciones {
+			rule.ID = etiqueta(vdom, varios, rule.ID)
+			nat = append(nat, rule)
+		}
+
+		if remote == nil {
+			remote = a.fetchRemoteVPN(ctx, vdom)
+		}
+	}
 	certs, certsOK := a.fetchCertificates(ctx)
 	licenses, licensesOK := a.fetchLicenses(ctx)
 
@@ -277,6 +333,7 @@ func (a *Adapter) FetchConfig(ctx context.Context) (*normalize.Config, error) {
 			certs:    !certsOK,
 			licenses: !licensesOK,
 			ipsec:    !ipsecOK,
+			vdoms:    !vdomsFiables,
 		}),
 		Admins:     []normalize.Admin{},
 		NAT:        nat,
@@ -318,45 +375,50 @@ func (a *Adapter) FetchConfig(ctx context.Context) (*normalize.Config, error) {
 		})
 	}
 
-	for _, iface := range interfaces.Results {
-		role := interfaceRole(iface.Role, iface.Name)
-		protocols := splitList(strings.ReplaceAll(iface.AllowAccess, ",", " "))
+	for _, dominio := range ámbitos {
+		for _, iface := range dominio.interfaces {
+			role := interfaceRole(iface.Role, iface.Name)
+			protocols := splitList(strings.ReplaceAll(iface.AllowAccess, ",", " "))
+			nombre := etiqueta(dominio.vdom, varios, iface.Name)
 
-		config.Interfaces = append(config.Interfaces, normalize.Interface{
-			Name: iface.Name,
-			Zone: role,
-			Role: role,
-			IP:   firstField(iface.IP),
-			VLAN: iface.VLANID,
-		})
-		config.MgmtAccess = append(config.MgmtAccess, normalize.ManagementAccess{
-			InterfaceName: iface.Name,
-			IsWAN:         role == "wan",
-			Protocols:     protocols,
-		})
+			config.Interfaces = append(config.Interfaces, normalize.Interface{
+				Name: nombre,
+				Zone: role,
+				Role: role,
+				IP:   firstField(iface.IP),
+				VLAN: iface.VLANID,
+			})
+			config.MgmtAccess = append(config.MgmtAccess, normalize.ManagementAccess{
+				InterfaceName: nombre,
+				IsWAN:         role == "wan",
+				Protocols:     protocols,
+			})
+		}
 	}
 
-	for position, policy := range policies.Results {
-		config.Policies = append(config.Policies, normalize.Policy{
-			ID:       fmt.Sprintf("%d", policy.PolicyID),
-			Name:     policy.Name,
-			Position: position + 1,
-			Enabled:  yes(policy.Status),
-			SrcZones: names(policy.SrcIntf),
-			DstZones: names(policy.DstIntf),
-			Src:      names(policy.SrcAddr),
-			Dst:      names(policy.DstAddr),
-			Services: names(policy.Service),
-			Action:   policyAction(policy.Action),
-			Log:      logMode(policy.Logtraf),
-			Profiles: normalize.SecurityProfiles{
-				IPS:        policy.IPSSensor != "",
-				AV:         policy.AVProfile != "",
-				Web:        policy.WebFilter != "",
-				AppCtl:     policy.AppList != "",
-				SSLInspect: policy.SSLSSHProfil != "" && policy.SSLSSHProfil != "no-inspection",
-			},
-		})
+	for _, dominio := range ámbitos {
+		for position, policy := range dominio.policies {
+			config.Policies = append(config.Policies, normalize.Policy{
+				ID:       etiqueta(dominio.vdom, varios, fmt.Sprintf("%d", policy.PolicyID)),
+				Name:     policy.Name,
+				Position: position + 1,
+				Enabled:  yes(policy.Status),
+				SrcZones: names(policy.SrcIntf),
+				DstZones: names(policy.DstIntf),
+				Src:      names(policy.SrcAddr),
+				Dst:      names(policy.DstAddr),
+				Services: names(policy.Service),
+				Action:   policyAction(policy.Action),
+				Log:      logMode(policy.Logtraf),
+				Profiles: normalize.SecurityProfiles{
+					IPS:        policy.IPSSensor != "",
+					AV:         policy.AVProfile != "",
+					Web:        policy.WebFilter != "",
+					AppCtl:     policy.AppList != "",
+					SSLInspect: policy.SSLSSHProfil != "" && policy.SSLSSHProfil != "no-inspection",
+				},
+			})
+		}
 	}
 
 	config.SHA256 = fingerprint(config)
@@ -441,7 +503,7 @@ type syslogdSetting struct {
 // Devuelve una lista vacía y no un error si no se pueden leer: un firewall sin
 // syslog configurado es un hallazgo, no un fallo de recolección, y perder el
 // snapshot entero por esto sería peor que no saberlo.
-func (a *Adapter) fetchSyslogTargets(ctx context.Context) []string {
+func (a *Adapter) fetchSyslogTargets(ctx context.Context, vdom string) []string {
 	targets := []string{}
 
 	// FortiOS numera el segundo y siguientes: log.syslogd2, log.syslogd3...
@@ -452,7 +514,7 @@ func (a *Adapter) fetchSyslogTargets(ctx context.Context) []string {
 		"cmdb/log.syslogd4/setting",
 	} {
 		var setting syslogdSetting
-		if err := a.get(ctx, path, &setting); err != nil {
+		if err := a.scopedGet(ctx, vdom, path, &setting); err != nil {
 			continue
 		}
 		if !strings.EqualFold(setting.Results.Status, "enable") || setting.Results.Server == "" {

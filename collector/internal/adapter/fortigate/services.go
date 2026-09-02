@@ -68,7 +68,7 @@ func (a *Adapter) fetchServices(ctx context.Context) ([]string, []string) {
 }
 
 // fetchIPsec lee los túneles y con qué se cifran.
-func (a *Adapter) fetchIPsec(ctx context.Context) ([]normalize.IPsecTunnel, bool) {
+func (a *Adapter) fetchIPsec(ctx context.Context, vdom string) ([]normalize.IPsecTunnel, bool) {
 	var phase1 struct {
 		Results []struct {
 			Name       string `json:"name"`
@@ -79,7 +79,7 @@ func (a *Adapter) fetchIPsec(ctx context.Context) ([]normalize.IPsecTunnel, bool
 			DHGroup    string `json:"dhgrp"`
 		} `json:"results"`
 	}
-	if err := a.get(ctx, "cmdb/vpn.ipsec/phase1-interface", &phase1); err != nil {
+	if err := a.scopedGet(ctx, vdom, "cmdb/vpn.ipsec/phase1-interface", &phase1); err != nil {
 		return []normalize.IPsecTunnel{}, false
 	}
 
@@ -100,7 +100,7 @@ func (a *Adapter) fetchIPsec(ctx context.Context) ([]normalize.IPsecTunnel, bool
 }
 
 // fetchRemoteVPN lee el acceso remoto por SSL.
-func (a *Adapter) fetchRemoteVPN(ctx context.Context) *normalize.RemoteVPN {
+func (a *Adapter) fetchRemoteVPN(ctx context.Context, vdom string) *normalize.RemoteVPN {
 	var settings struct {
 		Results struct {
 			Status        string `json:"status"`
@@ -113,7 +113,7 @@ func (a *Adapter) fetchRemoteVPN(ctx context.Context) *normalize.RemoteVPN {
 			} `json:"authentication-rule"`
 		} `json:"results"`
 	}
-	if err := a.get(ctx, "cmdb/vpn.ssl/settings", &settings); err != nil {
+	if err := a.scopedGet(ctx, vdom, "cmdb/vpn.ssl/settings", &settings); err != nil {
 		return nil
 	}
 	if !strings.EqualFold(settings.Results.Status, "enable") {
@@ -139,7 +139,7 @@ func (a *Adapter) fetchRemoteVPN(ctx context.Context) *normalize.RemoteVPN {
 }
 
 // fetchNAT lee las publicaciones hacia dentro (VIP).
-func (a *Adapter) fetchNAT(ctx context.Context) ([]normalize.NATRule, bool) {
+func (a *Adapter) fetchNAT(ctx context.Context, vdom string) ([]normalize.NATRule, bool) {
 	var vips struct {
 		Results []struct {
 			Name     string `json:"name"`
@@ -153,7 +153,7 @@ func (a *Adapter) fetchNAT(ctx context.Context) ([]normalize.NATRule, bool) {
 			PortForward string `json:"portforward"`
 		} `json:"results"`
 	}
-	if err := a.get(ctx, "cmdb/firewall/vip", &vips); err != nil {
+	if err := a.scopedGet(ctx, vdom, "cmdb/firewall/vip", &vips); err != nil {
 		return []normalize.NATRule{}, false
 	}
 
