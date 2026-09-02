@@ -53,6 +53,7 @@ Uso:
   collector service install                              arranca solo con la máquina
   collector run                                          recibe, agrega y envía
   collector test                                         prueba la API del firewall
+  collector flush                                        sube lo que quedó pendiente
   collector vault -device <id> -from <fecha> -to <fecha> consulta la bóveda local
 
 Opciones comunes:
@@ -84,6 +85,8 @@ func main() {
 		err = runDevice(args, logger)
 	case "test":
 		err = runTest(args, logger)
+	case "flush":
+		err = runFlush(args, logger)
 	case "vault":
 		err = runVault(args, logger)
 	case "-h", "--help", "help":
@@ -348,10 +351,13 @@ func identityAccepted(file *config.File) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
+	// Los ceros de esta llamada se guardan como salud del colector, así que el
+	// disco va con su valor real: mandar 0 pintaba "Disco libre 0 GB" en el
+	// portal —una alerta roja— por una comprobación interna nuestra.
 	client := transport.New(file.BaseURL, file.CollectorID, key)
 	response, err := client.Post(ctx, "heartbeat", map[string]any{
 		"version": version, "eps": 0, "droppedPct": 0.0,
-		"queueDepth": 0, "diskFreeGb": 0, "clockSkewSeconds": 0,
+		"queueDepth": 0, "diskFreeGb": vault.FreeGB(file.VaultDir), "clockSkewSeconds": 0,
 	})
 	if err != nil {
 		return true
@@ -866,6 +872,16 @@ func collect(ctx context.Context, path, passphrase string, logger *slog.Logger) 
 		}
 	}
 
+	// Y se sube en el acto, sin esperar al reloj de cinco minutos.
+	//
+	// Esperarlo costó una instalación entera: el técnico conectó su FortiGate,
+	// el asistente dijo que estaba midiendo, cerró la ventana —ya había
+	// terminado— y el snapshot se quedó en el disco. En el portal, un colector
+	// vivo y cero de todo lo demás. Lo que el cliente compara no es nuestro
+	// intervalo de subida: es que al terminar de instalar, su firewall esté ahí.
+	sendPending(ctx, client, pending, worker, listener, file.VaultDir, logger)
+	logger.Info("configuración inicial enviada; tu firewall ya aparece en el portal")
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -1043,6 +1059,73 @@ func runTest(args []string, logger *slog.Logger) error {
 
 // runVault is the local query over the raw logs: the portal reaches it through
 // an evidence order in phase 5; the CLI is what exists in phase 1.
+// runFlush sube lo que quedó en el búfer y termina.
+//
+// Existe porque los datos pendientes no necesitan la clave del firewall: ya
+// están leídos y solo falta firmarlos y enviarlos. Cuando alguien cierra la
+// ventana del colector antes de la primera subida —pasó, y el portal quedó con
+// un colector vivo y cero datos—, esto los rescata sin volver a tocar el equipo.
+func runFlush(args []string, logger *slog.Logger) error {
+	set := flag.NewFlagSet("flush", flag.ExitOnError)
+	path := configFlag(set)
+	if err := set.Parse(args); err != nil {
+		return err
+	}
+
+	file, err := config.Load(*path)
+	if err != nil {
+		return err
+	}
+	key, err := file.SigningKey()
+	if err != nil {
+		return err
+	}
+
+	pending, err := buffer.New(file.BufferDir)
+	if err != nil {
+		return err
+	}
+	items, err := pending.List()
+	if err != nil {
+		return err
+	}
+	if len(items) == 0 {
+		logger.Info("no hay nada pendiente")
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	client := transport.New(file.BaseURL, file.CollectorID, key)
+	enviados := 0
+	for _, item := range items {
+		var payload any
+		if err := json.Unmarshal(item.Payload, &payload); err != nil {
+			logger.Error("payload ilegible, se descarta", "archivo", item.Path)
+			_ = pending.Ack(item.Path)
+			continue
+		}
+
+		response, err := client.Post(ctx, "ingest-"+item.Kind, payload)
+		if err != nil {
+			return fmt.Errorf("no se pudo enviar %s: %w", item.Kind, err)
+		}
+		if response.Status >= 400 {
+			logger.Error("la nube rechazó el envío", "tipo", item.Kind, "estado", response.Status, "respuesta", string(response.Body))
+			_ = pending.Ack(item.Path)
+			continue
+		}
+
+		_ = pending.Ack(item.Path)
+		enviados++
+		logger.Info("enviado", "tipo", item.Kind)
+	}
+
+	logger.Info("pendientes enviados", "cantidad", enviados)
+	return nil
+}
+
 func runVault(args []string, logger *slog.Logger) error {
 	set := flag.NewFlagSet("vault", flag.ExitOnError)
 	path := configFlag(set)

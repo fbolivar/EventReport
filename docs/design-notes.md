@@ -1201,3 +1201,23 @@ Reproducido con el identificador muerto real antes de arreglarlo, y verificado d
 **Regla:** un identificador guardado en disco es una suposición sobre el estado del servidor.
 Antes de construir encima, se comprueba — y el fallo se distingue de la falta de red, porque
 tratarlos igual borra lo que funciona.
+
+
+#### Un colector vivo y un portal vacío
+
+El técnico conectó su FortiGate, el asistente dijo que estaba midiendo, cerró la ventana —ya había
+terminado— y el portal mostró el colector activo con cero hallazgos, cero postura y cero
+cumplimiento. El snapshot no se había perdido: estaba **en su disco**, leído y firmado, esperando
+al reloj de subida de cinco minutos.
+
+Tres cambios:
+
+- **La configuración inicial se sube en el acto**, no en el siguiente tic. Lo que el cliente
+  compara no es nuestro intervalo: es que al terminar de instalar, su firewall esté ahí.
+- **`collector flush`** sube lo que quedó pendiente sin volver a tocar el firewall. Los datos
+  encolados ya están leídos: solo falta firmarlos. Sirve para rescatar exactamente este caso.
+- **La comprobación de identidad ya no manda ceros.** Enviaba `diskFreeGb: 0` en una llamada
+  interna nuestra, y el portal pintaba "Disco libre 0 GB" en rojo sobre un disco sano.
+
+**Regla:** un dato que el cliente ya generó no puede quedarse esperando un temporizador nuestro.
+El primer dato de todos, menos todavía: es el único que decide si el producto sirve o no.
