@@ -65,3 +65,60 @@ func TestSinSyslogDevuelveListaVacia(t *testing.T) {
 		t.Fatalf("esperaba vacío, obtuvo %v", targets)
 	}
 }
+
+// Un firewall que dice tener administradores y no los enseña no puede
+// convertirse en tres controles aprobados. Pasó con un FortiGate 40F real: el
+// usuario de API devolvía `results: []` con `size: 2`.
+func TestAdminsOcultosDejanSusReglasSinEvaluar(t *testing.T) {
+	adapter := &Adapter{Host: "https://192.168.0.1", Token: "x", HTTP: respuestas{
+		"monitor/system/status": `{"serial":"FGT40F","version":"v7.4.12","results":{"hostname":"FW"}}`,
+		"cmdb/system/admin":     `{"results":[],"size":2}`,
+		"cmdb/system/interface": `{"results":[]}`,
+		"cmdb/firewall/policy":  `{"results":[]}`,
+	}}
+
+	config, err := adapter.FetchConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if config.Capabilities.AdminMFA {
+		t.Error("declaró que puede juzgar el MFA de cuentas que no vio")
+	}
+	for _, code := range adminRules {
+		if !contiene(config.Capabilities.UnevaluableRules, code) {
+			t.Errorf("%s debería quedar sin evaluar", code)
+		}
+	}
+}
+
+// Cuando sí se ven las cuentas, las reglas se evalúan como siempre.
+func TestConAdminsVisiblesTodoSeEvalua(t *testing.T) {
+	adapter := &Adapter{Host: "https://192.168.0.1", Token: "x", HTTP: respuestas{
+		"monitor/system/status": `{"serial":"FGT40F","version":"v7.4.12","results":{"hostname":"FW"}}`,
+		"cmdb/system/admin":     `{"results":[{"name":"admin"}],"size":1}`,
+		"cmdb/system/interface": `{"results":[]}`,
+		"cmdb/firewall/policy":  `{"results":[]}`,
+	}}
+
+	config, err := adapter.FetchConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !config.Capabilities.AdminMFA {
+		t.Error("no debía renunciar a evaluar el MFA")
+	}
+	if len(config.Capabilities.UnevaluableRules) != 0 {
+		t.Errorf("no debía haber reglas sin evaluar: %v", config.Capabilities.UnevaluableRules)
+	}
+}
+
+func contiene(list []string, value string) bool {
+	for _, item := range list {
+		if item == value {
+			return true
+		}
+	}
+	return false
+}

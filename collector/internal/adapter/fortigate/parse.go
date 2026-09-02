@@ -26,6 +26,24 @@ type Adapter struct {
 
 func (a *Adapter) Brand() string { return "fortigate" }
 
+// adminRules son las reglas que no se pueden juzgar sin ver las cuentas de
+// administrador: MFA, hosts de confianza y número de superadministradores.
+var adminRules = []string{"FW-002", "FW-003", "FW-004"}
+
+// capabilitiesFor declara qué se pudo mirar de verdad en este firewall.
+//
+// Cuando el usuario de API no alcanza a ver los administradores, esas reglas
+// salen como "no evaluable" y el informe lo dice, en vez de dar por bueno lo
+// que nadie miró.
+func (a *Adapter) capabilitiesFor(adminsOcultos bool) normalize.Capabilities {
+	capabilities := a.Capabilities()
+	if adminsOcultos {
+		capabilities.AdminMFA = false
+		capabilities.UnevaluableRules = append(capabilities.UnevaluableRules, adminRules...)
+	}
+	return capabilities
+}
+
 // Capabilities: FortiGate answers all 20 rules (section 15.4).
 func (a *Adapter) Capabilities() normalize.Capabilities {
 	return normalize.Capabilities{

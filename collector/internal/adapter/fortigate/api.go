@@ -221,12 +221,21 @@ func (a *Adapter) FetchConfig(ctx context.Context) (*normalize.Config, error) {
 		return nil, err
 	}
 
+	// El firewall puede responder 200 y no enseñar nada.
+	//
+	// Un usuario de API de solo lectura sin permiso sobre "System >
+	// Administrators" recibe `results: []` con `size: 2`: el equipo dice que
+	// tiene dos cuentas y no deja verlas. Guardarlo como "no hay
+	// administradores" convierte tres controles de acceso en un aprobado
+	// silencioso, que en un informe de cumplimiento es peor que no decir nada.
 	var admins struct {
 		Results []adminAccount `json:"results"`
+		Size    int            `json:"size"`
 	}
 	if err := a.get(ctx, "cmdb/system/admin", &admins); err != nil {
 		return nil, err
 	}
+	adminsOcultos := len(admins.Results) == 0 && admins.Size > 0
 
 	var interfaces struct {
 		Results []systemInterface `json:"results"`
@@ -257,7 +266,7 @@ func (a *Adapter) FetchConfig(ctx context.Context) (*normalize.Config, error) {
 	config := &normalize.Config{
 		SchemaVersion: normalize.SchemaVersion,
 		CollectedAt:   time.Now().UTC().Format(time.RFC3339),
-		Capabilities:  a.Capabilities(),
+		Capabilities:  a.capabilitiesFor(adminsOcultos),
 		Admins:        []normalize.Admin{},
 		MgmtAccess:    []normalize.ManagementAccess{},
 		Interfaces:    []normalize.Interface{},

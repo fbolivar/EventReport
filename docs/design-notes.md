@@ -1251,3 +1251,29 @@ derecho propio: un firewall que no registra nada no cumple ISO 27001 A.8.15 ni P
 **Regla:** una tabla vacía en producción es una funcionalidad sin estrenar, no un detalle de datos.
 Antes de dar por hecho que una parte del producto funciona, hay que preguntarle a la base si alguna
 vez recibió una fila.
+
+
+#### Un firewall que dice tener administradores y no los enseña
+
+Contra el FortiGate 40F real, `cmdb/system/admin` respondió **200** con `results: []` y `size: 2`:
+el equipo declara dos cuentas y el usuario de API no tiene permiso para verlas. El colector lo
+guardaba como "no hay administradores", y tres controles de acceso —MFA, hosts de confianza y
+número de superadministradores— pasaban en silencio.
+
+En un producto de cumplimiento eso es lo peor que puede ocurrir: **un aprobado que nadie miró**. El
+mecanismo correcto ya existía (`capabilities.unevaluableRules`, §15.4), solo que ningún adaptador lo
+usaba. Ahora, cuando el firewall dice tener cuentas que no deja leer, FW-002, FW-003 y FW-004 salen
+como *no evaluables* y el informe lo dice.
+
+Verificado contra el equipo real: `adminMfa: false · sin evaluar: [FW-002, FW-003, FW-004]`.
+
+**Regla:** una lista vacía tiene dos significados —"no hay" y "no pude ver"— y solo uno de los dos
+se puede escribir en un informe de cumplimiento. Cuando el equipo da pistas de la diferencia
+(`size` frente a `results`), hay que leerlas.
+
+#### Lo que todavía no se lee del FortiGate
+
+`services.ntp` y `services.dns` viajan vacíos: el adaptador no los pide y ninguna regla los mira.
+Hoy no causan un hallazgo falso porque nadie los evalúa, pero el equipo real tiene
+`ntpsync: enable · type: fortiguard`, así que el dato existe y el día que se escriba una regla de
+sincronización horaria hay que pedirlo antes, no después.
