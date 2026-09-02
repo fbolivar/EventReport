@@ -259,6 +259,12 @@ func (a *Adapter) FetchConfig(ctx context.Context) (*normalize.Config, error) {
 	// por derecho propio: un firewall que no registra nada no cumple ISO 27001
 	// A.8.15 ni PCI DSS 10.
 	syslogTargets := a.fetchSyslogTargets(ctx)
+	dns, ntp := a.fetchServices(ctx)
+	tunnels, ipsecOK := a.fetchIPsec(ctx)
+	remote := a.fetchRemoteVPN(ctx)
+	nat, natOK := a.fetchNAT(ctx)
+	certs, certsOK := a.fetchCertificates(ctx)
+	licenses, licensesOK := a.fetchLicenses(ctx)
 
 	// Las listas arrancan vacías, no nil: en Go una lista nil se serializa como
 	// `null` y el otro lado espera un arreglo. Un firewall sin túneles VPN debe
@@ -266,18 +272,23 @@ func (a *Adapter) FetchConfig(ctx context.Context) (*normalize.Config, error) {
 	config := &normalize.Config{
 		SchemaVersion: normalize.SchemaVersion,
 		CollectedAt:   time.Now().UTC().Format(time.RFC3339),
-		Capabilities:  a.capabilitiesFor(adminsOcultos),
-		Admins:        []normalize.Admin{},
-		MgmtAccess:    []normalize.ManagementAccess{},
-		Interfaces:    []normalize.Interface{},
-		Policies:      []normalize.Policy{},
-		NAT:           []normalize.NATRule{},
-		Certs:         []normalize.Certificate{},
-		Licenses:      []normalize.License{},
-		VPN:           normalize.VPN{IPsec: []normalize.IPsecTunnel{}},
+		Capabilities: a.capabilitiesFor(adminsOcultos, unreadable{
+			nat:      !natOK,
+			certs:    !certsOK,
+			licenses: !licensesOK,
+			ipsec:    !ipsecOK,
+		}),
+		Admins:     []normalize.Admin{},
+		NAT:        nat,
+		Certs:      certs,
+		Licenses:   licenses,
+		MgmtAccess: []normalize.ManagementAccess{},
+		Interfaces: []normalize.Interface{},
+		Policies:   []normalize.Policy{},
+		VPN:        normalize.VPN{IPsec: tunnels, Remote: remote},
 		Services: normalize.Services{
-			NTP:           []string{},
-			DNS:           []string{},
+			NTP:           ntp,
+			DNS:           dns,
 			SyslogTargets: syslogTargets,
 		},
 		Device: normalize.Device{

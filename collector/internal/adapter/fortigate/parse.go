@@ -30,17 +30,52 @@ func (a *Adapter) Brand() string { return "fortigate" }
 // administrador: MFA, hosts de confianza y número de superadministradores.
 var adminRules = []string{"FW-002", "FW-003", "FW-004"}
 
+// unreadable marca qué secciones de la configuración no se pudieron leer.
+type unreadable struct {
+	nat      bool
+	certs    bool
+	licenses bool
+	ipsec    bool
+}
+
+// Reglas que no se pueden juzgar sin cada sección. Una lista vacía porque el
+// firewall no contestó es indistinguible de una lista vacía porque no hay nada,
+// y solo una de las dos permite decir "cumple".
+var (
+	natRules     = []string{"FW-010"}
+	certRules    = []string{"FW-013"}
+	licenseRules = []string{"FW-016"}
+	ipsecRules   = []string{"FW-012"}
+)
+
 // capabilitiesFor declara qué se pudo mirar de verdad en este firewall.
 //
-// Cuando el usuario de API no alcanza a ver los administradores, esas reglas
-// salen como "no evaluable" y el informe lo dice, en vez de dar por bueno lo
-// que nadie miró.
-func (a *Adapter) capabilitiesFor(adminsOcultos bool) normalize.Capabilities {
+// Cuando una sección no se puede leer —el usuario de API no llega, o el equipo
+// no responde ese endpoint—, sus reglas salen como "no evaluable" y el informe
+// lo dice, en vez de dar por bueno lo que nadie miró.
+func (a *Adapter) capabilitiesFor(adminsOcultos bool, sinLeer unreadable) normalize.Capabilities {
 	capabilities := a.Capabilities()
+
 	if adminsOcultos {
 		capabilities.AdminMFA = false
 		capabilities.UnevaluableRules = append(capabilities.UnevaluableRules, adminRules...)
 	}
+	if sinLeer.nat {
+		capabilities.UnevaluableRules = append(capabilities.UnevaluableRules, natRules...)
+	}
+	if sinLeer.certs {
+		capabilities.Certificates = false
+		capabilities.UnevaluableRules = append(capabilities.UnevaluableRules, certRules...)
+	}
+	if sinLeer.licenses {
+		capabilities.Licenses = false
+		capabilities.UnevaluableRules = append(capabilities.UnevaluableRules, licenseRules...)
+	}
+	if sinLeer.ipsec {
+		capabilities.VPNRemote = false
+		capabilities.UnevaluableRules = append(capabilities.UnevaluableRules, ipsecRules...)
+	}
+
 	return capabilities
 }
 

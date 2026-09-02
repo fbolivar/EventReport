@@ -92,14 +92,23 @@ func TestAdminsOcultosDejanSusReglasSinEvaluar(t *testing.T) {
 	}
 }
 
+// firewallCompleto responde todo lo que el adaptador consulta.
+func firewallCompleto() respuestas {
+	return respuestas{
+		"monitor/system/status":                 `{"serial":"FGT40F","version":"v7.4.12","results":{"hostname":"FW"}}`,
+		"cmdb/system/admin":                     `{"results":[{"name":"admin"}],"size":1}`,
+		"cmdb/system/interface":                 `{"results":[]}`,
+		"cmdb/firewall/policy":                  `{"results":[]}`,
+		"cmdb/firewall/vip":                     `{"results":[]}`,
+		"monitor/system/available-certificates": `{"results":[]}`,
+		"monitor/license/status":                `{"results":{}}`,
+		"cmdb/vpn.ipsec/phase1-interface":       `{"results":[]}`,
+	}
+}
+
 // Cuando sí se ven las cuentas, las reglas se evalúan como siempre.
 func TestConAdminsVisiblesTodoSeEvalua(t *testing.T) {
-	adapter := &Adapter{Host: "https://192.168.0.1", Token: "x", HTTP: respuestas{
-		"monitor/system/status": `{"serial":"FGT40F","version":"v7.4.12","results":{"hostname":"FW"}}`,
-		"cmdb/system/admin":     `{"results":[{"name":"admin"}],"size":1}`,
-		"cmdb/system/interface": `{"results":[]}`,
-		"cmdb/firewall/policy":  `{"results":[]}`,
-	}}
+	adapter := &Adapter{Host: "https://192.168.0.1", Token: "x", HTTP: firewallCompleto()}
 
 	config, err := adapter.FetchConfig(context.Background())
 	if err != nil {
@@ -121,4 +130,62 @@ func contiene(list []string, value string) bool {
 		}
 	}
 	return false
+}
+
+// El fallo que costó cinco reglas: el adaptador no pedía certificados,
+// licencias, NAT ni túneles, el snapshot los llevaba vacíos, y FW-010, FW-012,
+// FW-013 y FW-016 aprobaban sin haber mirado nada.
+func TestLoQueNoSePudoLeerNoSeDaPorBueno(t *testing.T) {
+	sinPermisos := firewallCompleto()
+	for _, ruta := range []string{
+		"cmdb/firewall/vip",
+		"monitor/system/available-certificates",
+		"monitor/license/status",
+		"cmdb/vpn.ipsec/phase1-interface",
+	} {
+		delete(sinPermisos, ruta)
+	}
+
+	adapter := &Adapter{Host: "https://192.168.0.1", Token: "x", HTTP: sinPermisos}
+	config, err := adapter.FetchConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, code := range []string{"FW-010", "FW-012", "FW-013", "FW-016"} {
+		if !contiene(config.Capabilities.UnevaluableRules, code) {
+			t.Errorf("%s debería quedar sin evaluar cuando su sección no se pudo leer", code)
+		}
+	}
+	if config.Capabilities.Certificates || config.Capabilities.Licenses {
+		t.Error("declaró poder juzgar certificados o licencias que no leyó")
+	}
+}
+
+// Y al revés: un firewall que contesta todo se evalúa entero.
+func TestUnFirewallQueContestaTodoSeEvaluaEntero(t *testing.T) {
+	adapter := &Adapter{Host: "https://192.168.0.1", Token: "x", HTTP: firewallCompleto()}
+
+	config, err := adapter.FetchConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Capabilities.UnevaluableRules) != 0 {
+		t.Errorf("no debía renunciar a ninguna regla: %v", config.Capabilities.UnevaluableRules)
+	}
+}
+
+// Un equipo sincronizado con FortiGuard no está "sin NTP".
+func TestFortiGuardCuentaComoFuenteDeHora(t *testing.T) {
+	respuestas := firewallCompleto()
+	respuestas["cmdb/system/ntp"] = `{"results":{"ntpsync":"enable","type":"fortiguard","ntpserver":[]}}`
+
+	adapter := &Adapter{Host: "https://192.168.0.1", Token: "x", HTTP: respuestas}
+	config, err := adapter.FetchConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Services.NTP) != 1 || config.Services.NTP[0] != "fortiguard" {
+		t.Errorf("fuentes de hora = %v", config.Services.NTP)
+	}
 }

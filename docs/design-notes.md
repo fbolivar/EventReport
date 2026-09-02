@@ -1333,3 +1333,25 @@ firewall; hasta entonces, el marco no se ofrece.
 
 **Regla:** en un producto de cumplimiento, una referencia inventada cuesta más que una funcionalidad
 que falta. Lo que no se puede citar con la fuente delante, no se publica.
+
+
+#### Cinco reglas que aprobaban sin mirar
+
+El adaptador de FortiGate consultaba cuatro endpoints. `certs`, `licenses`, `nat`, `vpn` y
+`dns/ntp` viajaban vacíos en todos los snapshots —nadie los pedía— y FW-010, FW-011, FW-012, FW-013
+y FW-016 evaluaban listas vacías: cero hallazgos, cero avisos, un aprobado limpio en el informe. El
+mismo fallo que las cuentas de administrador ocultas, cinco veces.
+
+Ahora se leen los VIP, los túneles IPsec, el portal SSL-VPN, los certificados que no son de fábrica,
+las licencias y DNS/NTP. Contra el firewall real aparecieron **dos hallazgos que llevaban meses
+invisibles** —el portal SSL-VPN sin segundo factor y un túnel con IKEv1 y aes128— y desapareció **un
+falso positivo**: el equipo sincroniza la hora con FortiGuard, que no aparece en la lista de
+servidores NTP, y el informe llevaba tiempo diciendo "sin NTP" sobre un reloj correcto. La postura
+pasó de 63 a 54 al dejar de mirar hacia otro lado.
+
+Cada consulta va por separado y ninguna tumba el snapshot: un firewall que no deja leer sus
+certificados sigue aportando sus políticas. Lo que no se pudo leer entra en `unevaluableRules`.
+
+**Regla:** en un producto de cumplimiento, la pregunta no es "¿qué reglas tengo?" sino "¿qué está
+mirando cada regla?". Una regla sobre datos que nadie recoge no es una comprobación: es un aprobado
+automático con nombre técnico.
